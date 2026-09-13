@@ -20,7 +20,8 @@ See [research_questions.md](research_questions.md) and the frozen [protocol.md](
 | Phase 4 verification | Complete (2026-09-14). See `docs/data_collection.md` |
 | Raw corpus export | Complete: all 33 recommended PRs in `data/raw/prs/` |
 | Human labels | Frozen 2026-09-14. Primary reference set = 75 defect/design findings. See `docs/human_annotation.md`. |
-| LLM or linter runs | Not started |
+| Static-analysis baseline | Phase 6A complete. Pinned `golangci-lint` 2.13.2 on merge-SHA trees. See `docs/static_analysis.md`. |
+| LLM runs | Not started |
 | Report | Not written |
 
 Do not cite precision/recall numbers from this repository. None exist yet.
@@ -70,9 +71,10 @@ Copy `.env.example` to `.env` only when you are ready to call a model API. **Do 
 3. `python scripts/export_corpus.py` (uses `GITHUB_TOKEN` when set; otherwise the local cache plus public PR diffs).
 4. `python scripts/validate_corpus.py` — this fails if any of the 33 recommended exports is incomplete.
 5. Inspect `data/raw/prs/<number>/`, `data/raw/manifest.csv`, and unlabeled partitions in `data/extracted/prs/<number>/`.
-6. Do **not** run `scripts/run_linter.py` or `scripts/run_models.py` until later phases.
+6. Replay the static-analysis baseline with `python scripts/install_golangci_lint.py` then `python scripts/run_linter.py`. See `docs/static_analysis.md`.
+7. Do **not** run `scripts/run_models.py` until the LLM phase.
 
-`pytest` checks schemas, eligibility, bot/author rules, merge-SHA diffs, and complete-corpus validation.
+`pytest` checks schemas, eligibility, bot/author rules, merge-SHA diffs, complete-corpus validation, and the golangci-lint baseline parser/manifest.
 
 ## Ethics and privacy
 

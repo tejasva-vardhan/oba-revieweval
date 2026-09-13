@@ -1,0 +1,3 @@
+internal/restapi/handler.go:40:2: SA5011: possible nil pointer dereference (staticcheck)
+internal/restapi/other.go:8:5: copylocks: lock value copied (govet)
+internal/restapi/handler.go:40:2: SA4006: this value of err is never used (staticcheck)

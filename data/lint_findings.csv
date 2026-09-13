@@ -1,0 +1,1 @@
+pr_number,tool,tool_version,commit_sha,file,line,column,rule,message,severity,raw_finding_id

@@ -1,0 +1,37 @@
+{
+  "Issues": [
+    {
+      "FromLinter": "staticcheck",
+      "Text": "SA5011: possible nil pointer dereference",
+      "Severity": "",
+      "Pos": {
+        "Filename": "internal/restapi/handler.go",
+        "Offset": 120,
+        "Line": 40,
+        "Column": 2
+      }
+    },
+    {
+      "FromLinter": "govet",
+      "Text": "copylocks: lock value copied",
+      "Severity": "",
+      "Pos": {
+        "Filename": "internal/restapi/other.go",
+        "Offset": 10,
+        "Line": 8,
+        "Column": 5
+      }
+    },
+    {
+      "FromLinter": "staticcheck",
+      "Text": "SA4006: this value of err is never used",
+      "Severity": "warning",
+      "Pos": {
+        "Filename": "internal/restapi/handler.go",
+        "Offset": 200,
+        "Line": 40,
+        "Column": 2
+      }
+    }
+  ]
+}

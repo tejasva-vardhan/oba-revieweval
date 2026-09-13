@@ -1,0 +1,64 @@
+{
+  "pr_number": 1347,
+  "tool": "golangci-lint",
+  "tool_version": "2.13.2",
+  "install_source": "https://github.com/golangci/golangci-lint/releases/download/v2.13.2/",
+  "config": "configs/golangci-research.yml",
+  "config_hash": "sha256:8ed7fb90c68635289e5645f6cf673a911145a1a59b969e9cc50c94790a302aa7",
+  "commit_sha": "710c2119b679bb54d062b192c9e5361c5ba1437d",
+  "analyzed_tree": "post-merge merge commit",
+  "diff_mode": "merge_parents_three_dot",
+  "diff_base_sha": "d6caa600d688a2c0fb4ed19d1580f2cc37e5aa13",
+  "diff_head_sha": "1e213cac09cf1a59efdc0033d49d9bc7112b03a6",
+  "merge_parents": [
+    "d6caa600d688a2c0fb4ed19d1580f2cc37e5aa13",
+    "1e213cac09cf1a59efdc0033d49d9bc7112b03a6"
+  ],
+  "first_parent_paths": [
+    "internal/restapi/arrivals_and_departures_for_stop_handler.go",
+    "internal/restapi/arrivals_and_departures_for_stop_handler_test.go"
+  ],
+  "first_parent_empty": false,
+  "changed_files": [
+    "internal/restapi/arrivals_and_departures_for_stop_handler.go",
+    "internal/restapi/arrivals_and_departures_for_stop_handler_test.go"
+  ],
+  "lint_targets": [
+    "internal/restapi/arrivals_and_departures_for_stop_handler.go",
+    "internal/restapi/arrivals_and_departures_for_stop_handler_test.go"
+  ],
+  "lint_packages": [
+    "./internal/restapi"
+  ],
+  "build_tags": [
+    "sqlite_fts5",
+    "sqlite_math_functions"
+  ],
+  "command": [
+    "C:\\Users\\tejas\\oba-revieweval\\tools\\bin\\golangci-lint.exe",
+    "run",
+    "--config",
+    "C:\\Users\\tejas\\oba-revieweval\\configs\\golangci-research.yml",
+    "--build-tags",
+    "sqlite_fts5 sqlite_math_functions",
+    "--output.json.path=C:\\Users\\tejas\\oba-revieweval\\data\\raw\\lint\\1347\\raw.json",
+    "--output.text.path=C:\\Users\\tejas\\oba-revieweval\\data\\raw\\lint\\1347\\raw.txt",
+    "--output.text.colors=false",
+    "--output.text.print-issued-lines=false",
+    "--uniq-by-line=false",
+    "./internal/restapi"
+  ],
+  "cwd": "C:\\Users\\tejas\\oba-revieweval\\data\\raw\\cache\\lint-worktree",
+  "go_version_host": "Windows-11-10.0.26200-SP0",
+  "exit_code": 0,
+  "execution_status": "ok",
+  "parse_error": "",
+  "raw_issue_count": 0,
+  "finding_count": 0,
+  "dropped_outside_diff": 0,
+  "typecheck_issue_count": 0,
+  "scope_rule": "keep findings whose file is in the merge-parent three-dot changed-file list",
+  "special_case_457": false,
+  "stdout": "",
+  "stderr": ""
+}

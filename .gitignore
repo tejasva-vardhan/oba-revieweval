@@ -25,3 +25,4 @@ report/*.log
 report/*.out
 tmp/
 _tmp_*.py
+tools/bin/
