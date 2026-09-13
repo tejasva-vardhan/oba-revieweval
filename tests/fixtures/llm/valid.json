@@ -1,0 +1,22 @@
+{
+  "findings": [
+    {
+      "title": "Missing unlock",
+      "severity": "high",
+      "category": "concurrency",
+      "path": "internal/restapi/block_handler.go",
+      "line": 40,
+      "rationale": "RLock is taken and not released on the error path.",
+      "recommendation": "Unlock in a defer."
+    },
+    {
+      "title": "Missing unlock",
+      "severity": "high",
+      "category": "concurrency",
+      "path": "internal/restapi/block_handler.go",
+      "line": 40,
+      "rationale": "Same lock issue restated.",
+      "recommendation": "Unlock in a defer."
+    }
+  ]
+}

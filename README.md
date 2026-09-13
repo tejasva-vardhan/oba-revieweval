@@ -21,7 +21,7 @@ See [research_questions.md](research_questions.md) and the frozen [protocol.md](
 | Raw corpus export | Complete: all 33 recommended PRs in `data/raw/prs/` |
 | Human labels | Frozen 2026-09-14. Primary reference set = 75 defect/design findings. See `docs/human_annotation.md`. |
 | Static-analysis baseline | Phase 6A complete. Pinned `golangci-lint` 2.13.2 on merge-SHA trees. See `docs/static_analysis.md`. |
-| LLM runs | Not started |
+| LLM A pipeline | Phase 6B engineering pilot ready (`#1404`, `#702`, `#1428`). Live calls need `OPENAI_API_KEY`. See `docs/llm_pilot.md`. |
 | Report | Not written |
 
 Do not cite precision/recall numbers from this repository. None exist yet.
