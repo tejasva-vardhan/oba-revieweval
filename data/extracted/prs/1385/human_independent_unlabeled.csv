@@ -1,0 +1,85 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1385,5377006205,issue,burma-shave,human,false,false,true,false,@coderabbitai review,,,1385-002,false
+1385,5459088193,issue,burma-shave,human,false,false,true,false,"@ARCoder181105 checking in on this stack. This base PR still has requested changes open, so we cannot sensibly review further up the stack yet. Could you please address the requested changes here first, then let us know when the base is ready?
+",,,1385-004,false
+1385,5548284191,issue,burma-shave,human,false,false,true,false,"@ARCoder181105 checking in on this stack. This base PR still has requested changes open, so we cannot sensibly review further up the stack yet. Could you please address the requested changes here first, then let us know when the base is ready?
+",,,1385-005,false
+1385,3834719282,inline,burma-shave,human,false,false,true,false,"`ValidateServiceDate` duplicates the pre-existing `ValidateDate` (line 95) instead of extending or replacing it. `ValidateDate` (YYYY-MM-DD only) appears unused anywhere in production code, so the file now carries two similarly-named date validators with overlapping scope — a future caller or bugfix can easily reach for the wrong one. Worth considering whether `ValidateDate` should be removed or merged into this new function instead of living alongside it.",internal/utils/validation.go,,1385-008,false
+1385,3834719284,inline,burma-shave,human,false,false,true,false,"This comment (""only fails on an unusable agency timezone"") is inaccurate, and the branch below it looks unreachable now. `ValidateServiceDate` (line 36) already runs `ParseDate(dateParam, time.UTC)` and returns 400 on any format/bounds failure; neither of `ParseDate`'s two success paths depends on the `loc` argument for success/failure, so once `ValidateServiceDate` has succeeded, `ParseDate(dateParam, loc)` here can't fail for any valid `loc`. A bad agency timezone is also already caught earlier by `loadAgencyLocation` (lines 48-52), before this second parse runs. Since this branch appears dead, could it be removed (or the comment corrected if there's a case I'm missing)?",internal/restapi/schedule_for_stop_handler.go,,1385-009,false
+1385,4998546853,review_body,burma-shave,human,false,false,true,false,"Two findings from an automated review, both confirmed against this PR's actual diff (`git diff origin/main...HEAD`). Left as inline comments below.
+
+Note: the review also flagged three other issues (a duplicated route-reference builder, a routeless-stop early-return removal, and an unrelated test-file change) but those all point at code outside this PR's diff — pre-existing code this branch didn't touch — so they're left out here rather than posted as inline comments GitHub would reject.",,,1385-010,false
+1385,5035869775,review_body,burma-shave,human,false,false,true,false,"## OBA API Change Review: PR #1385 / current branch — single endpoint
+
+**Input**: Working tree on branch `pr-1385`; open PR #1385 found and local `HEAD` matches PR head SHA.  
+**Stated goal**: Fix #1382 — `schedule-for-stop` should return a 400 `fieldErrors.date` response for an unparseable `date` even when the agency prefix is unknown.  
+**Scope**: Single endpoint.  
+**Affected endpoint(s)**: `schedule-for-stop`.  
+**Changes**: Both production and test changes.
+
+### Overview
+
+**What this change does**
+
+Before this PR, `/api/where/schedule-for-stop/{id}.json` split the combined stop ID, looked up the agency, and only parsed `date` after the agency lookup. That meant:
+
+- `GET /schedule-for-stop/25_<known-stop>.json?date=garbage` returned the expected 400 field error.
+- `GET /schedule-for-stop/99_1001.json?date=garbage`, where agency `99` does not exist, returned 404 before Maglev ever examined the bad date.
+
+The PR adds `utils.ValidateServiceDate`, which delegates to the existing `ParseDate`, and calls it before the agency lookup. The later timezone-aware date resolution still happens after the agency is loaded. So the bad-date / unknown-agency case now returns HTTP 400 with `fieldErrors.date`, while valid-date unknown agency/stop cases still return 404.
+
+**Domain background**
+
+`schedule-for-stop` accepts a combined stop ID shaped like `{agencyId}_{stopId}` and an optional service-date parameter. The service date may be `YYYY-MM-DD` or a Unix millisecond timestamp. For `YYYY-MM-DD`, Maglev eventually needs the agency timezone to resolve “midnight on that date,” but it does not need the agency just to determine whether the string is parseable. The OBA spec requires malformed field values to produce structured field errors before resource lookup failures take precedence.
+
+<details>
+### Goal check
+
+**Goal check: `schedule-for-stop`**
+
+Stated goal: malformed `date` should return 400 `fieldErrors.date` regardless of whether the agency/stop exists; valid-date unknown agency/stop should remain 404; agency timezone should still be used for real date resolution.
+
+- ✓ Invalid date with unknown agency returns 400 before agency lookup.
+- ✓ Invalid date with known agency still returns 400.
+- ✓ Valid date with unknown agency still returns 404.
+- ✓ Valid date with unknown stop still returns 404.
+- ✓ Timezone-aware parsing remains after agency lookup.
+
+Test coverage: Adequate for the central regression. The new test covers unknown-agency bad date, known-agency bad date, unknown-agency valid date, and unknown-stop valid date. Targeted test run passed:
+
+```text
+go test -tags ""sqlite_fts5 sqlite_math_functions"" ./internal/restapi -run TestScheduleForStopHandlerDateValidationPrecedesLookup
+```
+
+Overall: **fully closed**.
+
+### Client impact
+
+Caveat: client checkouts had anomalies: `/workspace/wayfinder` is on branch `develop`, and `/workspace/maglev.wiki` has an untracked file.
+
+**Client impact: `schedule-for-stop`**
+
+| Behaviour | Wayfinder/SDK | iOS | Android |
+|---|---|---|---|
+| Invalid `date` + unknown agency changes from 404 to 400 `fieldErrors.date` | Minimal/direct-call impact only. JS SDK has `date?: string`; Wayfinder passes date through from a date picker and does not intentionally send malformed dates. | No routine impact. iOS builds `yyyy-MM-dd` from `Date`, so malformed dates are not normally sent. | No routine impact. Android endpoint accepts `date: String?`, but normal callers would send valid dates. |
+
+No response payload fields or success shapes change. The observable change is limited to an error-precedence edge case.
+
+### Spec check
+
+**Spec check: `schedule-for-stop`**
+
+- **Consistent** — The wiki spec’s Minimal Guarantees explicitly says: “When the date parameter is unrecognisable, a field-error response is returned before any stop lookup is attempted.”
+- **Consistent** — Extension 2a specifies HTTP 400 with `fieldErrors.date`.
+- **Consistent** — Valid-date unknown stop/agency remains 404 in Maglev, matching the existing Implementation Decision that Maglev intentionally corrects legacy Java’s null-body unknown-stop defect.
+
+Deviation recording: No new deviation needed. This change implements existing Maglev spec behavior rather than introducing a new legacy divergence.
+
+Overall: **spec-consistent**.
+</details>
+
+### Summary
+
+PR #1385 is a narrow `schedule-for-stop` error-precedence fix. It moves date-format validation ahead of agency lookup while preserving timezone-aware service-date resolution after the agency is known. The implementation matches the stated issue and the wiki spec, keeps valid unknown-resource behavior unchanged, and adds focused regression coverage.
+",,,1385-011,false
+1385,5181307568,review_body,burma-shave,human,false,false,true,true,,,,1385-012,false

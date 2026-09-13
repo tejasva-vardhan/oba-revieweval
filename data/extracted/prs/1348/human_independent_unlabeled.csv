@@ -1,0 +1,137 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1348,3801674253,inline,aaronbrethorst,human,false,false,true,false,"The first frequency row is used regardless of which frequency window the request time actually falls in. A trip with a peak/off-peak split in `frequencies.txt` — e.g. two rows for the same `trip_id`, `06:00-09:00 @600s` and `09:00-15:00 @1200s`, which is ordinary GTFS — will report the 06:00-09:00 window and a 10-minute headway for a 10:30 arrival. `startTime`, `endTime`, and `headway` are all wrong for any request outside the earliest window.
+
+`serviceDate` (and the caller's effective time) is already in hand here, so the row whose `[start_time, end_time)` contains the requested time should be selected, falling back to the first row only when none matches. The same `freqs[0]` / `freqRows[0]` shortcut is repeated in `trip_for_vehicle_handler.go:120`, `arrival_and_departure_for_stop_handler.go:437`, and `arrivals_and_departures_for_stop_handler.go:502`, so a shared selector here would fix all of them at once.
+",internal/restapi/trips_helper.go,,1348-015,false
+1348,3801674344,inline,aaronbrethorst,human,false,false,true,false,"When a route/direction has only `exact_times=0` frequency trips at this stop, `routeDirectionScheduleMap` has no entry for the route, so `directionMap` is a nil map and `directionMap[dirID]` yields a nil slice. `NewStopRouteDirectionSchedule` special-cases nil `frequencies` (`[]ScheduleFrequency{}`) but passes `stopTimes` straight through, so the response emits `""scheduleStopTimes"": null`.
+
+`testdata/openapi.yml` lists `scheduleStopTimes` in `StopRouteDirectionSchedule.required`, and Java OBA emits an empty list — a `null` here will break clients that iterate the array unguarded. The fixture in `frequency_fixture_test.go` puts a plain scheduled trip in the same route+direction as the frequency trips, so this path is never exercised by the new tests.
+
+Simplest fix is to mirror the frequencies handling in `NewStopRouteDirectionSchedule`:
+
+```suggestion
+			stopTimes := directionMap[dirID]
+			if stopTimes == nil {
+				stopTimes = []models.ScheduleStopTime{}
+			}
+			directionSchedule := models.NewStopRouteDirectionSchedule(tripHeadsign, stopTimes, frequencies)
+```
+",internal/restapi/schedule_for_stop_handler.go,,1348-016,false
+1348,3801674449,inline,aaronbrethorst,human,false,false,true,false,"Seeding every trip ID with `nil` *before* the batch query means a failed batch query is indistinguishable from ""these trips have no frequencies"". If `GetFrequenciesForTrips` returns an error, the code logs a warning and falls through with the map fully seeded, so `frequencyForEntry` finds `ok == true` for every trip, skips its fallback query, and returns `nil` — the whole response goes out as a 200 with `frequency: null` on every arrival and `status.frequency: null` throughout.
+
+That contradicts the PR description's ""strict error propagation (HTTP 500) for database failures during frequency lookups"", and per CONTRIBUTING a non-`sql.ErrNoRows` DB error should go through `serverErrorResponse`. Moving the seeding loop into the `else` branch (so it only runs after a successful batch) would at least let the per-trip fallback take over; propagating the error is better still.
+
+The same pattern is in `trips_for_location_handler.go:437-444` and `trips_for_route_handler.go:335-343`.
+",internal/restapi/arrivals_and_departures_for_stop_handler.go,,1348-017,false
+1348,3801678351,inline,aaronbrethorst,human,false,false,true,false,"The first frequency row is used regardless of which frequency window the request time actually falls in. A trip with a peak/off-peak split in `frequencies.txt` — e.g. two rows for the same `trip_id`, `06:00-09:00 @600s` and `09:00-15:00 @1200s`, which is ordinary GTFS — will report the 06:00-09:00 window and a 10-minute headway for a 10:30 arrival. `startTime`, `endTime`, and `headway` are all wrong for any request outside the earliest window.
+
+`serviceDate` (and the caller's effective time) is already in hand here, so the row whose `[start_time, end_time)` contains the requested time should be selected, falling back to the first row only when none matches. The same `freqs[0]` / `freqRows[0]` shortcut is repeated in `trip_for_vehicle_handler.go:120`, `arrival_and_departure_for_stop_handler.go:437`, and `arrivals_and_departures_for_stop_handler.go:502`, so a shared selector here would fix all of them at once.
+",internal/restapi/trips_helper.go,,1348-018,false
+1348,3801678897,inline,aaronbrethorst,human,false,false,true,false,"When a route/direction has only `exact_times=0` frequency trips at this stop, `routeDirectionScheduleMap` has no entry for the route, so `directionMap` is a nil map and `directionMap[dirID]` yields a nil slice. `NewStopRouteDirectionSchedule` special-cases nil `frequencies` (`[]ScheduleFrequency{}`) but passes `stopTimes` straight through, so the response emits `""scheduleStopTimes"": null`.
+
+`testdata/openapi.yml` lists `scheduleStopTimes` in `StopRouteDirectionSchedule.required`, and Java OBA emits an empty list — a `null` here will break clients that iterate the array unguarded. The fixture in `frequency_fixture_test.go` puts a plain scheduled trip in the same route+direction as the frequency trips, so this path is never exercised by the new tests.
+
+Simplest fix is to mirror the frequencies handling in `NewStopRouteDirectionSchedule`:
+
+```suggestion
+			stopTimes := directionMap[dirID]
+			if stopTimes == nil {
+				stopTimes = []models.ScheduleStopTime{}
+			}
+			directionSchedule := models.NewStopRouteDirectionSchedule(tripHeadsign, stopTimes, frequencies)
+```
+",internal/restapi/schedule_for_stop_handler.go,,1348-019,false
+1348,3801679012,inline,aaronbrethorst,human,false,false,true,false,"Seeding every trip ID with `nil` *before* the batch query means a failed batch query is indistinguishable from ""these trips have no frequencies"". If `GetFrequenciesForTrips` returns an error, the code logs a warning and falls through with the map fully seeded, so `frequencyForEntry` finds `ok == true` for every trip, skips its fallback query, and returns `nil` — the whole response goes out as a 200 with `frequency: null` on every arrival and `status.frequency: null` throughout.
+
+That contradicts the PR description's ""strict error propagation (HTTP 500) for database failures during frequency lookups"", and per CONTRIBUTING a non-`sql.ErrNoRows` DB error should go through `serverErrorResponse`. Moving the seeding loop into the `else` branch (so it only runs after a successful batch) would at least let the per-trip fallback take over; propagating the error is better still.
+
+The same pattern is in `trips_for_location_handler.go:437-444` and `trips_for_route_handler.go:335-343`.
+",internal/restapi/arrivals_and_departures_for_stop_handler.go,,1348-020,false
+1348,3801679108,inline,aaronbrethorst,human,false,false,true,false,"`freqErr` is swallowed here — a DB failure is silently indistinguishable from ""no frequencies for this trip"", and the arrival goes out with `frequency: null` and a 200. Every other frequency lookup added in this PR either propagates (`trip_for_vehicle_handler.go:115`, `schedule_for_stop_handler.go:172`) or at minimum logs. Per CONTRIBUTING, a non-`sql.ErrNoRows` error should reach `serverErrorResponse`:
+
+```suggestion
+	freqRows, freqErr := api.GtfsManager.GtfsDB.Queries.GetFrequenciesForTrip(ctx, tripID)
+	if freqErr != nil {
+		api.serverErrorResponse(w, r, freqErr)
+		return
+	}
+	if len(freqRows) > 0 {
+```
+",internal/restapi/arrival_and_departure_for_stop_handler.go,,1348-021,false
+1348,3801679198,inline,aaronbrethorst,human,false,false,true,false,"This assignment sits below the `CANCELED` early return at line 103, so a canceled frequency-based trip gets `status.frequency: null` while the enclosing entry (`TripDetails.Frequency`, `ArrivalAndDeparture.Frequency`, `TripsForRouteListEntry.Frequency`) still carries the frequency — the same trip reports two different answers in one response. Frequency is static schedule data and is just as valid for a canceled trip as `serviceDate` and `blockTripSequence`, both of which the code deliberately computes before that early return. Consider moving the lookup up next to `blockTripSequence` for the same reason.
+",internal/restapi/trips_helper.go,,1348-022,false
+1348,3801679279,inline,aaronbrethorst,human,false,false,true,false,"`tripIDs` here is unbounded — it is every distinct trip serving this stop on the target date, which at a busy downtown stop can be well over a thousand. This is the only query in the handler whose bind-variable count scales with trip count (`GetScheduleForStopOnDate` binds route IDs, `GetTripsByBlockIDs` binds block IDs), and it now hard-fails the whole request with a 500 (""too many SQL variables"") on exactly the stops most likely to be requested.
+
+`queryInBatches` in `reference_utils.go:520` exists for this and is documented as staying under the oldest 999-variable limit so behavior doesn't depend on which SQLite the build links against:
+
+```suggestion
+		allFreqs, freqErr := queryInBatches(ctx, tripIDs, api.GtfsManager.GtfsDB.Queries.GetFrequenciesForTrips)
+```
+",internal/restapi/schedule_for_stop_handler.go,,1348-023,false
+1348,3801679361,inline,aaronbrethorst,human,false,false,true,false,"When `includeStatus` is true (the default), `BuildTripStatus` was already called at line 76 with a nil `freqMap`, which runs `GetFrequenciesForTrip(ctx, tripID)` for this same trip inside `frequencyForEntry`. This is a second identical round-trip on every request. Passing a one-entry `freqMap` seeded here (or reading `status.Frequency` back) removes the duplicate — minor, but this PR's stated goal is eliminating redundant frequency queries. The same duplication exists in `arrival_and_departure_for_stop_handler.go:436`.
+",internal/restapi/trip_for_vehicle_handler.go,,1348-024,false
+1348,3817569136,inline,burma-shave,human,false,false,true,false,"`frequencyForEntry` always uses `freqs[0]` — the first frequency row for the trip — regardless of which window the request's `serviceDate`/effective time actually falls into. A trip with a peak/off-peak split in `frequencies.txt` (ordinary GTFS: e.g. `06:00-09:00@600s` and `09:00-15:00@1200s` for the same `trip_id`) will always report the `06:00-09:00` window and headway, even for a 10:30 request.
+
+Legacy Java doesn't do this — `ArrivalAndDepartureServiceImpl` resolves the frequency entry whose `[start_time, end_time)` actually contains the query time (`isFrequencyBasedArrivalInRange`), never ""just the first row."" The wiki spec already says ""the applicable headway window"" for this field, so this isn't just undocumented — it contradicts what's already written.
+
+Confirmed client impact: Wayfinder (`ArrivalDeparture.svelte`) and Android (`ArrivalInfo.kt`) both render this field directly as ""every N min, from/until HH:MM"" — riders would see the wrong window/headway for any multi-window frequency trip. Android's `ArrivalAdapters.kt` also uses `frequency.startTime` in a sentinel-detection heuristic that would compare against the wrong boundary.
+
+`serviceDate` (and the caller's effective time) is already available here, so please select the row whose `[start_time, end_time)` contains it, falling back to the first row only when none matches. The identical `freqs[0]`/`freqRows[0]` shortcut is repeated in `trip_for_vehicle_handler.go:125`, `arrival_and_departure_for_stop_handler.go:437`, `arrivals_and_departures_for_stop_handler.go:504`, and reimplemented again in `BuildTripSchedule` (`trips_helper.go:441`) instead of reusing this function — a single shared selector here would fix all five call sites at once.",internal/restapi/trips_helper.go,,1348-025,false
+1348,3817569144,inline,burma-shave,human,false,false,true,false,"This assignment sits after the `CANCELED` early return at line 103, so a canceled frequency-based trip gets `status.frequency: null` while the enclosing entry's own `Frequency` field (populated separately in `trip_details_handler.go`, `trip_for_vehicle_handler.go`, `arrival_and_departure_for_stop_handler.go`, etc.) still carries the frequency data — the same trip reports two different answers for the same field concept in one response. Frequency is static schedule data, just as valid for a canceled trip as `serviceDate`/`blockTripSequence`, both of which are computed before this early return. Consider moving the lookup up alongside those.",internal/restapi/trips_helper.go,,1348-026,false
+1348,3817569148,inline,burma-shave,human,false,false,true,false,"`tripIDs` here is unbounded — every distinct trip serving this stop on the target date, which at a busy stop can be well over a thousand. This is the only query in the handler whose bind-variable count scales with trip count, and it can hard-fail the whole request with a ""too many SQL variables"" error on exactly the stops most likely to be requested. `queryInBatches` (`reference_utils.go:520`) exists for this and keeps behavior independent of which SQLite build is linked:
+
+```suggestion
+		allFreqs, freqErr := queryInBatches(ctx, tripIDs, api.GtfsManager.GtfsDB.Queries.GetFrequenciesForTrips)
+```
+
+The same unbounded-list issue applies to `trips_for_route_handler.go:338`, `trips_for_location_handler.go:440`, and `arrivals_and_departures_for_stop_handler.go:298`.
+
+Separately: this near-identical batch-fetch-and-seed block (build trip IDs, seed `freqMap[id] = nil`, call `GetFrequenciesForTrips`, append by `TripID`) is duplicated across all four of those files, with inconsistent failure handling — this file returns a 500 on query failure, the other three log a warning and continue with an empty/partial map (see the next comment for why that's also a correctness bug in at least one of them). Worth consolidating into one shared helper so there's a single place to fix both the batching and the error policy.",internal/restapi/schedule_for_stop_handler.go,,1348-027,false
+1348,3817569159,inline,burma-shave,human,false,false,true,false,"Seeding every trip ID with `nil` *before* the batch query means a failed batch query is indistinguishable from ""these trips have no frequencies."" If `GetFrequenciesForTrips` errors, the code logs a warning and falls through with the map fully seeded, so `frequencyForEntry` finds `ok == true` for every trip, skips its fallback query, and returns `nil` — the response goes out as a 200 with `frequency: null` on every arrival and `status.frequency: null` throughout.
+
+That contradicts this PR's own stated goal of ""strict error propagation (HTTP 500) for database failures during frequency lookups,"" and per CONTRIBUTING a non-`sql.ErrNoRows` DB error should reach `serverErrorResponse`. Moving the seeding loop into the `else` branch (so it only runs after a successful batch) would at least let the per-trip fallback take over; propagating the error, as `schedule_for_stop_handler.go` already does, is more consistent with the rest of this PR. The same pattern is in `trips_for_location_handler.go:438` and `trips_for_route_handler.go:336`.",internal/restapi/arrivals_and_departures_for_stop_handler.go,,1348-028,false
+1348,3817569166,inline,burma-shave,human,false,false,true,false,"When a route/direction has only `exact_times=0` frequency trips at this stop, `routeDirectionScheduleMap` has no entry for the route, so `directionMap` is a nil map and `directionMap[dirID]` yields a nil slice. `NewStopRouteDirectionSchedule` special-cases nil `frequencies` (`[]ScheduleFrequency{}`) but passes `stopTimes` straight through, so the response emits `""scheduleStopTimes"": null`.
+
+`testdata/openapi.yml` lists `scheduleStopTimes` in `StopRouteDirectionSchedule.required`, and Java always emits an empty list here — `null` will break clients that iterate the array unguarded. The fixture in `frequency_fixture_test.go` puts a plain scheduled trip in the same route+direction as the frequency trips, so this path isn't exercised by the new tests.
+
+```suggestion
+			stopTimes := directionMap[dirID]
+			if stopTimes == nil {
+				stopTimes = []models.ScheduleStopTime{}
+			}
+			directionSchedule := models.NewStopRouteDirectionSchedule(tripHeadsign, stopTimes, frequencies)
+```",internal/restapi/schedule_for_stop_handler.go,,1348-029,false
+1348,3817569172,inline,burma-shave,human,false,false,true,false,"This headway loop has no cap on iteration count or generated entries. An `exact_times=1` frequency block with a small headway over a long window (e.g. 30s headway across a 20-hour span) generates on the order of 2,400 synthetic `ScheduleStopTime` entries per trip at that stop, with no upper bound the way `GetStopsForLocation`-style endpoints cap their result size elsewhere. A few such trips serving one busy stop could make a single request allocate and sort tens of thousands of entries. Worth adding a sane cap (with a warning log when hit), especially since this expansion is being kept as intentional behavior rather than reverted to match Java.",internal/restapi/schedule_for_stop_handler.go,,1348-030,false
+1348,3817569177,inline,burma-shave,human,false,false,true,false,"`freqErr` is swallowed here — a DB failure is silently indistinguishable from ""no frequencies for this trip,"" and the arrival goes out with `frequency: null` and a 200. Every other frequency lookup added in this PR either propagates (`trip_for_vehicle_handler.go:115`, `schedule_for_stop_handler.go:172`) or at minimum logs. Per CONTRIBUTING, a non-`sql.ErrNoRows` error should reach `serverErrorResponse`:
+
+```suggestion
+	freqRows, freqErr := api.GtfsManager.GtfsDB.Queries.GetFrequenciesForTrip(ctx, tripID)
+	if freqErr != nil {
+		api.serverErrorResponse(w, r, freqErr)
+		return
+	}
+	if len(freqRows) > 0 {
+```",internal/restapi/arrival_and_departure_for_stop_handler.go,,1348-031,false
+1348,3817569182,inline,burma-shave,human,false,false,true,false,"`BuildTripStatus`/`BuildTripSchedule` failures here now call `api.serverErrorResponse` and abort the whole request for *any* error the function can return — not just the new frequency-lookup error this PR adds. Previously, any `BuildTripStatus` error (e.g. a transient DB hiccup elsewhere in the block-snapshot logic) degraded gracefully to `status: null`/`schedule: null` in a 200. That's a wider behavior change than the PR's stated goal of propagating frequency errors, and it's inconsistent with sibling handlers touched by this same PR — `trips_for_route_handler.go` and `arrival_and_departure_for_stop_handler.go` still log-and-continue (`status = nil`) on the identical `BuildTripStatus` error path. Worth confirming this scope expansion is intentional, and if so, applying it consistently rather than per-handler.",internal/restapi/trip_for_vehicle_handler.go,,1348-032,false
+1348,3817569186,inline,burma-shave,human,false,false,true,false,"When `includeStatus` is true (the default), `BuildTripStatus` was already called above with a nil `freqMap`, which runs `GetFrequenciesForTrip(ctx, tripID)` for this same trip inside `frequencyForEntry`. This is a second, identical round-trip for the same trip on every request. Passing a one-entry `freqMap` seeded here (or reading `status.Frequency` back) removes the duplicate — minor, but this PR's stated goal is eliminating redundant frequency queries. The same duplication exists in `arrival_and_departure_for_stop_handler.go:436`.",internal/restapi/trip_for_vehicle_handler.go,,1348-033,false
+1348,4958090450,review_body,aaronbrethorst,human,false,false,true,true,,,,1348-040,false
+1348,4958090569,review_body,aaronbrethorst,human,false,false,true,true,,,,1348-041,false
+1348,4958090722,review_body,aaronbrethorst,human,false,false,true,true,,,,1348-042,false
+1348,4958094556,review_body,aaronbrethorst,human,false,false,true,true,,,,1348-043,false
+1348,4958095211,review_body,aaronbrethorst,human,false,false,true,true,,,,1348-044,false
+1348,4958095336,review_body,aaronbrethorst,human,false,false,true,true,,,,1348-045,false
+1348,4958095442,review_body,aaronbrethorst,human,false,false,true,true,,,,1348-046,false
+1348,4958095548,review_body,aaronbrethorst,human,false,false,true,true,,,,1348-047,false
+1348,4958095649,review_body,aaronbrethorst,human,false,false,true,true,,,,1348-048,false
+1348,4958095765,review_body,aaronbrethorst,human,false,false,true,true,,,,1348-049,false
+1348,4958117872,review_body,aaronbrethorst,human,false,false,true,false,please fix the items noted in the inline review and we'll get this merged!,,,1348-050,false
+1348,4977743941,review_body,burma-shave,human,false,false,true,false,"Reviewed against legacy Java (pinned at the SHA the wiki already cites) and the codebase's own conventions, alongside @aaronbrethorst's review and an independent `/code-review` pass. Most of CodeRabbit's earlier actionable comments on this PR (N+1 caching, division-by-zero guard, error propagation in several handlers, the routeDirection key-type refactor, missing doc comments) are already fixed in the current HEAD and don't need further action — I re-verified each against the code rather than trusting the stale comment text.
+
+Two spec-conformance items came out of comparing against legacy Java source:
+
+1. **Frequency window selection always picks the first `frequencies.txt` row for a trip, not the one matching the request time** (see inline comment on `frequencyForEntry`). Legacy Java resolves the time-matching `FrequencyEntry` per request; this PR's `frequencyForEntry`/`freqs[0]` shortcuts don't. This needs fixing — see inline comment.
+2. **`schedule-for-stop` expanding `exact_times=1` trips into discrete `scheduleStopTimes`** deviates from legacy Java, which lumps all frequency trips (`exact_times` 0 or 1) into `scheduleFrequencies` undifferentiated. We've decided to keep this behavior — it's a defensible improvement (GTFS's `exact_times=1` semantics call for exact timetable-equivalent output, and schedule-for-stop's underlying Java bean has no `exactTimes` field to fall back on, unlike the `frequency` object elsewhere). This has been documented in the `maglev.wiki` `schedule-for-stop` page's Implementation Decisions section — no action needed here, just flagging so the intentional divergence is visible in-PR too.
+
+The rest are correctness/consistency findings from combining @aaronbrethorst's review with an independent `/code-review medium` pass — each verified against current HEAD and confirmed still applicable.",,,1348-051,false
+1348,4990218481,review_body,burma-shave,human,false,false,true,false,Looks like we have merge conflicts,,,1348-053,false
+1348,5054400811,review_body,burma-shave,human,false,false,true,true,,,,1348-055,false

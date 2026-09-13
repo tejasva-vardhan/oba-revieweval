@@ -1,0 +1,76 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1288,5230223358,issue,aaronbrethorst,human,false,false,true,false,"### Code review
+
+Found 2 issues:
+
+1. The new `sql.ErrNoRows` → 404 branch is unreachable and reintroduces a 404 that this handler deliberately no longer has. `GetTripsByIDs` is a sqlc `:many` query (`-- name: GetTripsByIDs :many` in `gtfsdb/query.sql`), so it returns an empty slice with a nil error and never `sql.ErrNoRows` — the PR's own commit message acknowledges this (""since SQL IN queries do not return sql.ErrNoRows naturally""), and the two new tests only reach the branch by injecting `sql.ErrNoRows` through a `tripFetchFailureDB` wrapper into a query that cannot produce it. Commit 3dd2995e removed the identical dead check from this same handler for the same reason, and `trips-for-route` on main now has zero `sendNotFound` calls: ""The trips-for-route spec guarantees 200 OK even for unknown routes and out-of-service-area conditions, with no error or 404 case defined."" A missing *reference* trip should not turn a successful route response into a 404. The same dead branch is also added at the early-return path (line ~195), where `buildTripReferences` is called with an empty entry list and `nil` prefetched trips and therefore can never fetch anything or error.
+
+https://github.com/OneBusAway/maglev/blob/383fdccc0160c7368194c19cf27d4947479efbe9/internal/restapi/trips_for_route_handler.go#L474-L484
+
+2. The `referencedTripIDs` refactor is behavior-neutral, so the new regression test does not actually cover the reported bug. Every placeholder inserted into `presentTrips` is a bare `models.Trip{}` (lines 539, 550, 559, 570), and those are the only entries with an empty `ID` — prefetched trips come from `gtfsdb.Trip` rows whose `ID` is the primary key. The old `if t.ID == """"` loop therefore selected exactly the same ID set that `referencedTripIDs` now tracks, meaning adjacent block trips were already being fetched. `TestTripsForRouteHandler_BlockSequence_AdjacentTripReferences` would pass against `buildTripReferences` on main unchanged, so it does not demonstrate the empty-object behavior described in #1287. If empty adjacent-trip references are genuinely being observed, the cause is elsewhere and this change won't fix it; worth confirming the failing case reproduces before merging.
+
+https://github.com/OneBusAway/maglev/blob/383fdccc0160c7368194c19cf27d4947479efbe9/internal/restapi/trips_for_route_handler.go#L576-L586
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+ - If this code review was useful, please react with 👍. Otherwise, react with 👎. 
+",,,1288-002,false
+1288,3770121932,inline,burma-shave,human,false,false,true,false,"`referencedTripIDs` is redundant given the dedup check already in place. All four insertion sites (lines ~734-737, ~745-748, ~754-757, ~765-768) are already gated by `if _, exists := presentTrips[id]; !exists { ... }` - that guard *is* ""not yet fetched."" `tripIDsToFetch` could be appended to directly inside each of those guards (`tripIDsToFetch = append(tripIDsToFetch, id)`), which would drop this map plus the second loop here (lines 773-776) entirely, while keeping the same explicit-tracking intent the PR is going for - just without the extra map that has to be kept in sync by convention across four call sites.",internal/restapi/trips_for_route_handler.go,,1288-011,false
+1288,4890748411,review_body,aaronbrethorst,human,false,false,true,false,"Replacing the `t.ID == """"` zero-value heuristic with an explicit set of referenced trip IDs is a readability win — encoding ""which trips do we still need to fetch"" as an actual set rather than inferring it from a sentinel is the better expression of the intent. The `DBTX` wrapper for forcing lookup failures is a nice testing technique too.
+
+Two things are blocking, though.
+
+**1. The refactor is behavior-neutral, so it doesn't fix #1287.** Placeholders are always bare `models.Trip{}`, and prefetched trips always carry a non-empty primary-key ID, so the old `t.ID == """"` loop selected exactly the same set that `referencedTripIDs` now tracks. `TestTripsForRouteHandler_BlockSequence_AdjacentTripReferences` would pass against the current `buildTripReferences` on `main` unchanged. Whatever is actually causing the empty adjacent-trip references in #1287, this isn't it — so there's a reproducing case still to find before a fix is worth landing.
+
+**2. The `sql.ErrNoRows` → 404 branch is dead, and reintroduces something deliberately removed.** `GetTripsByIDs` is a sqlc `:many` query, so it never returns `ErrNoRows` — the 404 tests only reach that branch through an injected error the DB layer can't produce. More to the point, `3dd2995e` removed the identical dead check from this same handler on the grounds that the trips-for-route spec defines no 404 case, and `main`'s handler has no `sendNotFound` at all: even a missing agency returns an empty 200 list (`trips_for_route_handler.go:39-45`). A reference-lookup failure shouldn't be the thing that reintroduces a 404 here.
+
+Related and worth deciding deliberately rather than by default: escalating a `buildTripReferences` DB failure to a 500 also reverses this handler's posture. `main` logs and continues when reference resolution fails, and `3dd2995e` argues explicitly that a per-entry resolution failure shouldn't fail the whole response. CONTRIBUTING's non-`ErrNoRows` → 500 rule does cut the other way, so I don't think you were wrong to reach for it — but this handler has an established answer and it's the other one.
+
+The branch also conflicts with `main` now; `buildTripReferences` has gained a `stopIDMap` parameter since you cut it.
+
+If you can get a reproducing case for #1287 I'm very interested — the underlying report may well be real even though this change doesn't move it.
+",,,1288-014,false
+1288,4920893466,review_body,burma-shave,human,false,false,true,false,"## Two-stage review (spec conformance + code quality)
+
+**Spec conformance:** Verified this refactor is behavior-neutral. I traced all
+four `referencedTripIDs` insertion sites (`preFetchedTrips` loop, entry
+`TripId` loop, `schedule.previousTripId`/`nextTripId` loop, `status.activeTripId`
+loop) against the old `t.ID == """"` heuristic they replace - in every case,
+including IDs referenced from multiple places, the new set-based fetch list is
+identical to the old one. No new spec deviation is introduced by this PR, and
+the new tests are solid regression coverage for the existing (unchanged)
+reference-resolution behavior.
+
+Reviewing this did surface a pre-existing, previously undocumented deviation
+in this handler: when a referenced-trip/route DB lookup inside
+`buildTripReferences` fails, Maglev logs and returns `200 OK` with that
+reference silently dropped, whereas Java's `TripsForRouteAction.show()` only
+catches `OutOfServiceAreaServiceException` and lets any other exception
+propagate to a `500`. This predates #1288 (it's the posture `3dd2995e`
+deliberately established) and isn't something to change in this PR - it's now
+recorded in `maglev.wiki`'s Implementation Decisions for `trips-for-route`, no
+action needed here.
+
+**Code quality:** two small items below - a simplification and a commit-message
+nit. Neither is functionally broken, so not blocking, but worth tightening
+before merge.
+
+---
+
+Two things noticed while reading the surrounding code that are **out of scope
+for this PR** (different handler / pre-existing lines untouched by this diff),
+flagging only so they don't get lost:
+
+- `trips_for_route_handler.go:883` - `if route, ok := presentRoutes[trip.RouteID]; ok`
+  checks map-key presence, not whether the route was actually resolved. A
+  placeholder route key is inserted before `GetRoutesByIDs` fills it in, so if
+  that batched fetch fails, the trip is still emitted with an empty
+  `AgencyID`, producing a malformed combined ID (e.g. `""_1234""`). Pre-existing,
+  untouched by this diff - probably worth its own issue.
+- `trip_details_handler.go`'s `buildReferencedTrips` has the same
+  drop-on-not-found pattern for a trip referenced by `status.ActiveTripID`,
+  which can legitimately miss for DUPLICATED GTFS-RT trips with synthetic IDs
+  (per `trips_helper.go`'s own comments). That feeds into an iOS force-unwrap
+  (`OBAKitCore/Models/REST/TripStatus.swift:198`) on endpoints iOS calls
+  constantly - looks like a real crash risk, unrelated to this PR, worth its
+  own issue.",,,1288-019,false

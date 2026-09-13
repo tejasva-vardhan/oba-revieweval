@@ -1,0 +1,7 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1372,4998204666,review_body,burma-shave,human,false,false,true,true,,,,1372-009,false
+1372,4998300230,review_body,burma-shave,human,false,false,true,false,"Right now `stop_agencies` only keeps one row per stop. That works for picking a single agency to show, but some stops are served by more than one agency.
+
+A few other places in the codebase need that full list, not just one, e.g. checking whether a stop is valid for a given agency, or listing all stops for an agency. Those currently do a live join every time. If this table stored one row per stop and agency instead of collapsing to the lowest one, it could back those lookups too.",,,1372-010,false
+1372,4999944911,review_body,Ahmedhossamdev,human,false,false,true,false,Same opinion as @burma-shave ,,,1372-011,false
+1372,5054907482,review_body,burma-shave,human,false,false,true,true,,,,1372-015,false

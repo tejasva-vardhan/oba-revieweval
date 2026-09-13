@@ -1,0 +1,54 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1407,5055923018,review_body,burma-shave,human,false,false,true,false,"## Review summary
+
+Automated review (medium effort) plus manual verification of the merge state against current `main`. Two correctness/behavior issues should block merge; the rest are cleanup findings worth addressing in follow-up commits.
+
+### 1. Frequency support is missing, and this PR conflicts with main's frequency work — `internal/restapi/arrivals_core.go`
+
+This branch predates main's frequency-support work (`BuildTripStatus` gained a `freqMap` parameter and callers now populate `arrival.Frequency`). Verified directly:
+
+- `git merge main` into this branch produces a real `CONFLICT (content)` in `arrivals_and_departures_for_stop_handler.go`, spanning ~383 lines — this PR's side is a 3-line stub, main's side is the full old inline block that includes all frequency handling.
+- On the clean PR branch (no merge in progress), `grep -n ""freq\|Freq""` returns **zero matches** in `arrivals_core.go`, `arrivals_and_departures_for_stop_handler.go`, and `arrival_and_departure_for_stop_handler.go`.
+
+So today, any stop served by a frequencies.txt-based (headway) trip gets `""frequency"": null` in `/api/where/arrivals-and-departures-for-stop/{id}` responses instead of the populated block clients use for ""every N minutes"" countdown UIs. This isn't something git resolves automatically — whoever merges has to manually re-port frequency support into the new accumulator-based structure. Please rebase onto main and reintroduce frequency handling in `arrivals_core.go` before merge.
+
+### 2. `GetStopsByIDs` failure now returns a hard 500 instead of degrading gracefully — `internal/restapi/arrivals_core.go` (`loadStopReferenceData`)
+
+The old handler logged a warning on `GetStopsByIDs` error and continued with `batchStops = nil`, still returning 200 with arrivals populated but `references.stops` incomplete. The new code does:
+
+```go
+if err != nil {
+    return nil, nil, fmt.Errorf(""batch fetch stop references: %w"", err)
+}
+```
+
+which propagates all the way to `api.serverErrorResponse(w, r, err)` — a 500. A transient DB blip on the stop-reference batch query (unrelated to the arrivals already computed) now fails the whole request. This is an undisclosed behavior change; the PR description states ""no behavior change."" Since this sits in the exact region that conflicts with main (see #1), it's worth fixing while resolving that conflict rather than as a separate patch.
+
+### 3. Dead code: `RouteTypes` / `isRouteTypeAllowed` filter is never wired up
+
+`stopArrivalsInput.RouteTypes` is never set by the only caller (`handler_new.go`'s construction of `stopArrivalsInput`), so `isRouteTypeAllowed` is always called with `allowed == nil` and always returns `true`. This adds an unreachable branch to the hot per-row loop and a predicate function that looks like live functionality but is untested and unused. Either wire it up or drop it until it's needed.
+
+### 4. Dead code: `arrivalsReferencesInput.stopAgencies` is never populated
+
+Same pattern — the only call site never sets `stopAgencies`, so the per-stop agency lookup in `appendStopReferences` can never hit. A future contributor could reasonably assume per-stop agency overrides are already implemented and tested.
+
+### 5. Reuse: route/stop reference building bypasses existing helpers in `reference_utils.go`
+
+- `appendRouteReferences` hand-builds `models.Route` via `models.NewRoute` instead of reusing `buildRouteModels`, the documented single source of truth for `gtfsdb.Route -> models.Route` mapping.
+- `collectStopRoutes` manually copies a `GetRoutesForStopsRow` into a fresh `gtfsdb.Route` instead of reusing `routeReferenceFromStopRow`/`routeReferencesForStops`.
+
+Per CONTRIBUTING.md's Code Reuse guidance, these should call the existing helpers rather than duplicating the conversion logic — otherwise a future schema/null-handling fix applied to the shared helpers won't apply here.
+
+### 6. Duplication: the singular arrival-and-departure handler still has its own inline reference-building logic
+
+`internal/restapi/arrival_and_departure_for_stop_handler.go` hand-rolls the same ~110-line stop/route reference-building logic this PR just extracted into `arrivals_core.go`, leaving two parallel implementations that will drift over time. Worth a follow-up to migrate the singular handler onto the new shared helpers.
+
+### 7. Design note: `arrivalsAccumulator.alertAgencyID` is a single scalar despite being documented as multi-stop/multi-agency
+
+If a future arrivals-for-location endpoint loops `arrivalsForStop` across stops from different agencies while sharing one accumulator (the PR's stated purpose for this type), `acc.alertAgencyID` will lock onto whichever agency was set first, and later stops' alerts get namespaced under the wrong agency ID. Worth flagging now since it'll be harder to fix once a second caller depends on it.
+
+---
+
+Requesting changes primarily on #1 and #2 — the rest are good candidates for a follow-up commit or PR.
+",,,1407-009,false
+1407,5093843302,review_body,burma-shave,human,false,false,true,true,,,,1407-011,false

@@ -1,0 +1,38 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1315,5230249974,issue,aaronbrethorst,human,false,false,true,false,"### Code review
+
+No issues found. Checked for bugs and CLAUDE.md compliance.
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+",,,1315-002,false
+1315,5243793949,issue,soumajitgh,human,false,false,true,false,"I opened #1329 to cover the remaining multi-timezone service-date problem tracked in #1325. It keeps schedule.timeZone and serviceDate on the same trip agency timezone, and also uses that local service date for block-schedule lookups. If #1315 is preferred as the integration point, these changes can be incorporated there before merge.",,,1315-004,false
+1315,5288332756,issue,aaronbrethorst,human,false,false,true,false,"### Code review
+
+No issues found. Checked for bugs and CLAUDE.md compliance.
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+",,,1315-005,false
+1315,4890748165,review_body,aaronbrethorst,human,false,false,true,false,"Approved on the merits — both fixes are correct and narrowly scoped.
+
+The clamp flag is right: the handler searches with `BoundsFromParams(..., true)` and `GetStopsInBounds(..., true)`, so computing `outOfRange` against the unclamped bounds was genuinely inconsistent with what was searched. I checked the other two `CheckIfOutOfBounds` callers — routes-for-location and stops-for-location — and neither clamps its search, so leaving the variadic default alone keeps them self-consistent. The per-agency timezone resolution is only consumed for the `TimeZone` string in `buildScheduleFromMemory`, so no arrival/departure math moves and there's no DST exposure.
+
+Two things for a follow-up rather than this PR:
+
+- `agencyLocations` calls `time.LoadLocation` for every agency on every request, and Go doesn't memoize it. On a multi-agency feed that's N tzdata parses per hit on a load-tested endpoint, and it runs even when `includeSchedule=false`, where the map is never read. Worth resolving lazily or caching on the manager.
+- `serviceDate` is still the first agency's midnight while `timeZone` is now per-agency, so a multi-timezone feed reports e.g. `America/Chicago` alongside an LA-midnight `serviceDate`. Not a regression — it was equally wrong before — but the timezone fix is only half the multi-timezone story. I'll open an issue.
+
+Ordering note: this can't land before #1313 and #1314. It's approved and ready whenever the stack clears; no re-review needed unless a rebase changes behavior.
+",,,1315-008,false
+1315,4933041320,review_body,aaronbrethorst,human,false,false,true,false,"Re-approving on the merits — this looks good, but it can't merge until the stack below it clears.
+
+I re-reviewed after the force-push rather than assuming nothing moved, and your claim checks out: `location_params.go` is byte-identical to the SHA I approved, and the only genuinely new commit converts `TestCheckIfOutOfBoundsClamping` to table-driven form, which is what CONTRIBUTING asks for anyway.
+
+Both fixes still read correctly. The per-trip `schedule.timeZone` only feeds `TimeZone: currentLocation.String()` — stop times come through as durations since midnight, so there's no epoch or DST exposure. And computing `outOfRange` from the same 20 km clamped bounds the search actually used matches the precedent already set in `stops_for_location_handler.go`; leaving the other two callers on the variadic default keeps them self-consistent. The clamping test genuinely discriminates: at radius 5,000,000 m the unclamped bounds overlap the seeded region and the clamped box can't.
+
+What's blocking:
+
+The branch is conflicting with `main`, and notably none of your own four files are the problem — the conflicts are all in files inherited from #1313. That stack (#1313 → #1314 → #1315) has to land in order, and #1313 and #1314 both still have changes requested. Resolving those two should clear this one without further work from you here.
+
+The two follow-ups we agreed to defer are still deferred and still fine as such: the eager `time.LoadLocation` for every agency, and the `serviceDate`-versus-per-agency-`timeZone` mismatch. On that second one — I've just merged #1329, which fixes exactly that by resolving midnight in each trip's own agency timezone. It touches `buildTripsForLocationEntries`, so expect to reconcile with it when you rebase.
+",,,1315-009,false
+1315,4941198993,review_body,burma-shave,human,false,false,true,true,,,,1315-011,false

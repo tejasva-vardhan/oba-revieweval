@@ -1,0 +1,34 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1386,3849948222,inline,Ahmedhossamdev,human,false,false,true,false,"Optional. The DB schema enforces `headway_secs > 0` so this can't panic in production, but the function doesn't document that assumption and a unit test passing
+`gtfsdb.Frequency{HeadwaySecs: 0}` directly would still hit it. A guard makes the
+invariant explicit:
+
+```suggestion
+		headway := time.Duration(frequency.HeadwaySecs) * time.Second
+		window := time.Duration(frequency.EndTime - frequency.StartTime)
+		if headway == 0 {
+			continue
+		}
+		runs += int(window / headway)
+```
+
+Not blocking.
+",internal/restapi/schedule_for_stop_handler.go,,1386-003,false
+1386,3849954463,inline,Ahmedhossamdev,human,false,false,true,false,"Carry-forward note (pre-existing in the removed `fetchRouteRefs`): CLAUDE.md says to use
+`route.AgencyID` rather than the stop's agency when forming combined route IDs, since a
+stop can be served by routes from other agencies. `route.AgencyID` is available in the
+loop. For single-agency feeds this makes no difference, so not blocking now, but worth
+fixing before a multi-agency feed is added:
+
+```suggestion
+		combinedRouteID := utils.FormCombinedID(route.AgencyID, route.ID)
+```",internal/restapi/schedule_for_stop_handler.go,,1386-004,false
+1386,5014781857,review_body,Ahmedhossamdev,human,false,false,true,false,"Hey @ARCoder181105 ,
+
+The refactor is well-structured: replacing the three parallel maps with a single `directionScheduleGroup` accumulator makes the new frequency path easy to add and the existing headsign-vote logic easier to follow. The frequency spec steps are correctly implemented. References staying populated on no-service dates matches Java (live-verified on Unitrans). Two optional defensive notes inline; everything else looks good.
+
+
+",,,1386-007,false
+1386,5015395909,review_body,Ahmedhossamdev,human,false,false,true,true,,,,1386-008,false
+1386,5015402542,review_body,Ahmedhossamdev,human,false,false,true,true,,,,1386-009,false
+1386,5182134477,review_body,burma-shave,human,false,false,true,true,,,,1386-011,false

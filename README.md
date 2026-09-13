@@ -18,8 +18,8 @@ See [research_questions.md](research_questions.md) and the frozen [protocol.md](
 | Literature notes | Started |
 | 30-PR candidate list | Frozen discovery list preserved |
 | Phase 4 verification | Complete (2026-09-14). See `docs/data_collection.md` |
-| One-PR export | `#702` in `data/raw/prs/702/` |
-| Human labels | Not started (Phase 5) |
+| Raw corpus export | Complete: all 33 recommended PRs in `data/raw/prs/` |
+| Human labels | Phase 5 table written 2026-09-14. Two findings remain ambiguous; see `docs/human_annotation.md`. Not a tool-score freeze. |
 | LLM or linter runs | Not started |
 | Report | Not written |
 
@@ -63,14 +63,16 @@ pytest
 
 Copy `.env.example` to `.env` only when you are ready to call a model API. **Do not commit `.env`.**
 
-## Reproduce one PR
+## Reproduce the raw corpus
 
-1. Read `docs/data_collection.md` and confirm `#702` is eligible.
-2. With `GITHUB_TOKEN` set: `python scripts/export_prs.py --pr 702`. From cache: add `--cache-only`.
-3. Inspect `data/raw/prs/702/` and unlabeled partitions in `data/extracted/prs/702/`.
-4. Do **not** run `scripts/run_linter.py` or `scripts/run_models.py` until later phases.
+1. Read `docs/data_collection.md`.
+2. Clone Maglev to `data/raw/cache/maglev` (gitignored) if it is not already there.
+3. `python scripts/export_corpus.py` (uses `GITHUB_TOKEN` when set; otherwise the local cache plus public PR diffs).
+4. `python scripts/validate_corpus.py` — this fails if any of the 33 recommended exports is incomplete.
+5. Inspect `data/raw/prs/<number>/`, `data/raw/manifest.csv`, and unlabeled partitions in `data/extracted/prs/<number>/`.
+6. Do **not** run `scripts/run_linter.py` or `scripts/run_models.py` until later phases.
 
-`pytest` checks schemas, eligibility, bot/author rules, and the verification artifacts.
+`pytest` checks schemas, eligibility, bot/author rules, merge-SHA diffs, and complete-corpus validation.
 
 ## Ethics and privacy
 

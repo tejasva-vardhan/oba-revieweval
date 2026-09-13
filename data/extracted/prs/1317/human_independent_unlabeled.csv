@@ -1,0 +1,202 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1317,5230255076,issue,aaronbrethorst,human,false,false,true,false,"### Code review
+
+Found 1 issue:
+
+1. The new scheduled-candidate pass issues one DB query per candidate trip. `scheduledTripIDsInBounds` calls `scheduledPositionAtTime` inside `for _, trip := range trips`, and that helper calls `api.fetchStopCoordsForStopTimes(ctx, stopTimes)` — a `GetStopsByIDs` round trip for every single candidate. Everything else feeding that loop is deliberately batched (`stopTimesByTrip`, `shapePointsForTrips` with its shape-ID dedup), so this is the one unbatched lookup left, and it now fires on every trips-for-location request rather than only when a block snapshot is built. It is also the expensive kind of query: `GetStopsByIDs` uses sqlc's `/*SLICE:stop_ids*/` rewriting, so `q.query(ctx, nil, ...)` passes a nil statement and SQLite re-parses the rewritten SQL on each call — no prepared-statement reuse. The batched shape already exists in the codebase: `scheduled_block_helper.go:310` calls `fetchStopCoordsForStopTimes` once over a union of stop times and passes the resulting map down. Hoisting the same union here (one `GetStopsByIDs` over all candidates' stop times, map passed into `scheduledPositionAtTime`) removes N-1 queries. (CLAUDE.md lists ""Batch Queries (N+1 prevention)"" — `GetStopsByIDs` among them — as a first-class database pattern.)
+
+https://github.com/OneBusAway/maglev/blob/fd07f814abcb63410e435ac146a3e63dbeaf51df/internal/restapi/trips_helper.go#L1340-L1346
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+<sub>- If this code review was useful, please react with 👍. Otherwise, react with 👎.</sub>
+",,,1317-002,false
+1317,5288357795,issue,aaronbrethorst,human,false,false,true,false,"### Code review
+
+Re-reviewed at 2c49d60. The per-candidate `GetStopsByIDs` from the last round is hoisted, the shape-point grouping is unified behind `shapePointsForTrips`, and the shapeless-trip exclusion is documented — all three addressed. Two new findings, both in the new candidate pass.
+
+Found 2 issues:
+
+1. The new candidate query passes the uncapped in-bounds stop set straight into `IN (...)`, bypassing the batching added two commits earlier in this same branch. `inServiceTripIDs` hands `GetInServiceTripIDsForStops` the full `stopIDs` slice — the deliberately uncapped set from `GetStopsInBounds(ctx, ..., 0, true)` — plus `len(serviceIDs)+1` more bind variables, once per service day. ""Batch the candidate stop query's bind variables"" (baafdefe) put exactly that slice through `candidateTripIDsForStops` at 900 per statement, and the doc comment on `stopIDsPerTripIDQuery` in this same file says why: ""SQLite rejects a statement carrying more bind variables than it allows rather than truncating it. Kept well under the oldest limit (999) so the batch size does not depend on which SQLite the build links against."" The new query is held to neither bound. When it trips, `scheduledTripIDsInBounds` propagates the error to `serverErrorResponse`, so a dense bounding box 500s the whole endpoint where it previously returned the real-time trips. Reusing `stopIDsPerTripIDQuery` and looping is the same shape as the existing helper. (CONTRIBUTING.md: ""Before writing new logic, check whether it already exists — this is the single most common category of review comment."")
+
+https://github.com/OneBusAway/maglev/blob/2c49d6045bd0ed61f8c03873e30d1e395e6b0050/internal/restapi/trips_for_location_handler.go#L369-L378
+
+2. The hoisted stop fetch has the same unbatched-slice problem, one size larger, and fails silently rather than loudly. `unionStopTimes` collects the stop times of *every* candidate trip, so the ID list is every stop those trips touch — not just the in-bounds ones — which makes it strictly larger than the set issue 1 is about. `fetchStopCoordsForStopTimes` logs and returns nil on a query error (`scheduled_block_helper.go:602-611`), and its own comment spells out the consequence: `projectStopsInSequence` then writes 0 for every stop, `interpolateDistanceAtScheduledTime` returns 0, and `positionAndOrientationAtDistance` takes the `distance <= 0` branch and returns `shapePoints[0]`. Every candidate is then bounds-tested at the *start of its shape*, so the endpoint returns a silently wrong trip set with a 200 rather than an error. Worth noting the `emitBlockStops` precedent this copies (a3fa1465) unions one block's trips — a handful — not a metro-wide candidate set, so the size bound doesn't carry over.
+
+https://github.com/OneBusAway/maglev/blob/2c49d6045bd0ed61f8c03873e30d1e395e6b0050/internal/restapi/trips_for_location_handler.go#L312-L317
+
+Not blocking, for the record: `scheduledPositionAtTime` re-composes the exact sequence `applyScheduledTripPositionToStatus` already runs (`preCalculateCumulativeDistances` → `projectStopsInSequence` → `interpolateDistanceAtScheduledTime` → `positionAndOrientationAtDistance`). a3fa1465 collapsed a duplicate of this same projection precisely because the two copies had drifted; a shared core returning the distance alongside the position would serve both. Also note the branch is currently in conflict with main.
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+<sub>- If this code review was useful, please react with 👍. Otherwise, react with 👎.</sub>
+",,,1317-004,false
+1317,5339325368,issue,aaronbrethorst,human,false,false,true,false,"### Code review
+
+Found 2 issues:
+
+1. `TestFetchStopCoordsForStopTimes_BatchesLargeStopSets` cannot span more than one batch, so it does not guard the regression its doc comment claims. `fetchStopCoordsForStopTimes` dedupes stop IDs into `ids` before it queries, so the size that reaches `queryInBatches` is the number of *unique* stops — 375 in the RABA fixture — not `len(stopTimes)`. The loop appends the whole `ListStops` result repeatedly until `len(stopTimes) > idsPerBatchedQuery`, and `require.Greater(t, len(stopTimes), idsPerBatchedQuery)` asserts against that padded slice, but every appended ID is a duplicate of one already there. With 375 unique IDs against a 900 batch size the helper always issues exactly one query, so reverting `queryInBatches(ctx, ids, ...)` back to `GetStopsByIDs(ctx, ids)` leaves this test green. The two sibling tests added in the same commit (`TestCandidateTripIDsForStops_BatchesLargeStopSets`, `TestInServiceTripIDs_BatchesLargeStopSets`) do reach the multi-batch path because their callees don't dedupe; this one doesn't. Padding to `idsPerBatchedQuery+1` *distinct* IDs (synthesizing IDs, or asserting batch count through a fake query func the way `TestQueryInBatches` does) would make it bite. (CONTRIBUTING.md: ""Every new branch or condition introduced by a PR needs test coverage"".)
+
+https://github.com/OneBusAway/maglev/blob/0ab0302f42546e768f67bb2a66a421b5b79a63d4/internal/restapi/scheduled_block_helper_test.go#L500-L512
+
+2. The stop-coordinate lookup is still the one query in the scheduled pass whose failure is swallowed. `43943add` changed the consequence of a nil map from ""every candidate is placed at the start of its shape"" to ""every candidate is dropped,"" which fixes the wrong-positions half of the earlier finding, but the endpoint still answers 200. `fetchStopCoordsForStopTimes` returns nil on a `GetStopsByIDs` error (`scheduled_block_helper.go:625-633`) and `scheduledTripIDsInBounds` doesn't inspect it, so a real DB outage silently returns the response as if no trip were scheduled anywhere in the box — indistinguishable from an empty schedule. Every other lookup in this same function (`GetTripsByIDs`, `stopTimesByTrip`, `shapePointsForTrips`) propagates to `serverErrorResponse`; this one is the exception, and the new doc comment on `scheduledPositionAtTime` says why it matters here specifically — ""this result feeds a bounds-membership test deciding whether a trip is included in the response."" A variant that returns `(map, error)` for this caller, or checking for a nil map when `unionStopTimes` was non-empty, keeps the failure loud. (CONTRIBUTING.md: ""any other error should go through `serverErrorResponse` (500). Collapsing every error into a 404 hides real outages behind a 'not found' response."")
+
+https://github.com/OneBusAway/maglev/blob/0ab0302f42546e768f67bb2a66a421b5b79a63d4/internal/restapi/trips_for_location_handler.go#L285-L293
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+<sub>- If this code review was useful, please react with 👍. Otherwise, react with 👎.</sub>
+",,,1317-006,false
+1317,5459088077,issue,burma-shave,human,false,false,true,false,"@ARCoder181105 checking in on this older PR. It is still blocked by merge conflicts and failing tests. Could you please merge `main`, resolve the conflicts/test failures, and let us know when it is ready for re-review?
+",,,1317-008,false
+1317,3827408476,inline,burma-shave,human,false,false,true,false,"**Candidate discovery is trip-scoped; Java's is block-scoped, and this endpoint's whole point is closing that gap.**
+
+A GTFS block is the sequence of trips one physical vehicle runs in a day. Java's `ScheduledBlockLocationServiceImpl.getScheduledBlockLocationBetweenStopTimes` (lines 290-382) interpolates over the *whole block's* stop times, not one trip's — including the layover between trip A ending and trip B starting. Its own comment at line 335 (""Are we between trips? Where is the transition point?"") shows this is deliberate: a vehicle in a scheduled layover still gets `inService=true` and a real interpolated position (line 301, set unconditionally). `AbstractBlockLocationServiceImpl.java:266-273` confirms `null` (no position) only happens before the block starts or after it ends entirely — never at a trip boundary inside it.
+
+`inServiceTripIDs`/`scheduledTripIDsInBounds` here only ask whether *one trip's own* `[min_arrival_time, max_departure_time]` contains the query moment. A bus in a scheduled layover — finished trip A, hasn't started trip B, no live GTFS-RT position — falls into neither trip's span and gets no schedule-derived entry at all. Since the PR's stated purpose is producing a schedule-derived position whenever there's no live vehicle, this is a gap in the feature itself, not an adjacent concern.
+
+The good news: the hard part is already built. `scheduled_block_helper.go`'s `computeScheduledBlockSnapshot` already does Java-equivalent block/shift-level interpolation — including active-trip transition at exactly the boundary Java uses (`assignActiveTrip`'s comment cites `ScheduledBlockLocationServiceImpl.java:337-352` directly) — and it's already used by `buildTripStatusCore` for trip-details. It's also cache-aware per shift, so calling it for multiple candidates in the same block within one request is cheap by design.
+
+The real work is candidate discovery: today a layover trip is only found if it itself serves an in-bounds stop. You'd need to anchor discovery on ""any trip in a shift that serves an in-bounds stop"" (grouped by `block_id`/service_id rather than per-trip), then call `computeScheduledBlockSnapshot` on that anchor to find the shift's actual active trip and position, deduping candidates by `ActiveTripID` rather than by whichever trip anchored the discovery. Real design work, but reusing existing, tested machinery rather than inventing new interpolation.",internal/restapi/trips_for_location_handler.go,,1317-021,false
+1317,3827408479,inline,burma-shave,human,false,false,true,false,"**Strict containment here, but Java (and this codebase's own `runsOn`) uses a `[now-30min, now+10min]` grace window at this exact step.**
+
+`min_arrival_time <= since_midnight AND max_departure_time >= since_midnight` requires the query moment to fall strictly inside a trip's own span. But `BlockStatusServiceImpl.getBlocksForBounds` (lines 192-199) builds `timeFrom = time - runningLateWindow*1000` / `timeTo = time + runningEarlyWindow*1000` before searching for candidates, and `BlockCalendarServiceImpl.findBlockTripsInRange` (lines 267-277) does the equivalent of `maxDeparture >= timeFrom AND minArrival <= timeTo` — the same overlap-with-buffer shape as this codebase's own `serviceDateResolver.runsOn` (`trips_helper.go:1342-1343`), whose comment says explicitly it's there to match Java.
+
+So this query is stricter than both Java and the rest of this codebase: a trip that ended in the last 30 minutes, or starts in the next 10, with no live vehicle, is never offered as a schedule-derived candidate here, even though Java's own definition of ""running"" (which this codebase otherwise carefully mirrors) would still count it.
+
+Can `since_midnight` be checked against `[since_midnight - runningLate, since_midnight + runningEarly]` here instead of the bare value, matching `runsOn`? `runningLate`/`runningEarly` are already defined as constants in `trips_helper.go` if the caller wants to pass a widened value instead of changing the SQL's comparison directly.",gtfsdb/query.sql,,1317-022,false
+1317,3827408480,inline,burma-shave,human,false,false,true,false,"**Same query, a second issue: only one of its two unbounded slice params is batched.**
+
+`GetInServiceTripIDsForStopsParams` binds both `StopIds` and `ServiceIds` as SQLite `IN (...)` slices, plus the `SinceMidnight` scalar. This call batches `StopIds` at `idsPerBatchedQuery` (900) via `queryInBatches`, but `ServiceIds` (`day.serviceIDs`) goes through unbounded and in full on every batch. For an agency with more than ~99 distinct active service IDs on a given day, a full 900-stop batch plus that unbounded service-ID slice can push the total past SQLite's 999-variable limit, and the query fails outright — a 500, not silent degradation.
+
+Every other `queryInBatches` caller in this file (`GetRouteIDsForStops`, `GetStopsByIDs`, `GetTripsByIDs`, etc.) binds exactly one slice, so this is a new failure mode this PR introduces by combining two unbounded slices through the same helper. Worth fixing alongside the window change above, since both touch this same call.",internal/restapi/trips_for_location_handler.go,,1317-023,false
+1317,3827408481,inline,burma-shave,human,false,false,true,false,"Minor, non-blocking: per CONTRIBUTING.md, bounds/geometry helpers belong in `internal/utils/geometry.go` (where `CoordinateBounds` itself already lives), not `internal/restapi`. `internal/gtfs/gtfs_manager.go:413` already inlines this exact same lat/lon-in-bounds check — moving this one to `utils` would let that call site reuse it too, instead of the codebase carrying two independent copies of the same comparison.",internal/restapi/trips_for_location_handler.go,,1317-024,false
+1317,3827408483,inline,burma-shave,human,false,false,true,false,"Minor, non-blocking: this returns `visible, nil` on cancellation, but every other cancellation check in this same handler (lines 59-60, 121-122, 628-629) calls `clientCanceledResponse` instead. In practice the handler re-checks `ctx.Err()` at line 121 before ever sending a response, so this doesn't currently produce a wrong response — just an inconsistent pattern within one function's own call chain, worth aligning if you're touching this function anyway for the block/window changes above.",internal/restapi/trips_for_location_handler.go,,1317-025,false
+1317,4890748341,review_body,aaronbrethorst,human,false,false,true,false,"This is good work and the hardest piece of the stack. The schedule-derived candidate pass is well factored, checking both the query day and the previous service day is right, excluding trips that already have a live vehicle avoids double-placing them, and the care you took with sqlc placeholder ordering in the new query checks out. The batching discipline elsewhere in the change is exactly what I'd want.
+
+Which is why the one gap stands out.
+
+**`scheduledPositionAtTime` issues a `GetStopsByIDs` per candidate trip.** `scheduledTripIDsInBounds` calls it inside the per-trip loop, and that helper calls `fetchStopCoordsForStopTimes` unconditionally. Every other input to that loop is deliberately batched — stop times, shape points, trips — so this one reads as an oversight rather than a choice. `GetStopsByIDs` uses sqlc slice-rewriting, so it can't use a prepared statement and re-parses SQL on every call, and your own KCM numbers put the candidate set in the hundreds. `scheduled_block_helper.go:310` already has the batched union form to copy.
+
+Hoisting the stop-coordinate fetch out of the loop should be mechanical.
+
+Two smaller things, neither blocking:
+
+- Shape points are fetched and grouped twice per request — once in `shapePointsForTrips` for candidates, then again in `buildTripsForLocationEntries` for the final superset. One redundant batched query.
+- Scheduled trips with no `shape_id`, or fewer than two shape points, are silently excluded, so a shapeless feed gets no benefit from this change. Reasonable given you can't bounds-test without geometry, but it deserves a line in the ""Known limitation"" section since the nearest in-bounds stop was available as a fallback.
+
+On CodeRabbit's comment about a canceled request producing a 200 with no body: I checked, and the mechanism it describes is real but it's pre-existing on `main` — `trips_for_location_handler.go` already returns a nil slice on early cancellation and the caller already short-circuits before the `ctx.Err()` check. Not introduced by this PR, and not yours to fix here. I'll open it separately.
+
+Ordering note: this is the top of the stack, so #1313 → #1314 → #1315 → #1316 all need to land first.
+
+Re-review once the per-trip query is hoisted.
+",,,1317-034,false
+1317,4933041629,review_body,aaronbrethorst,human,false,false,true,false,"This will need some changes before merging — please see the notes below.
+
+The design is right and the previous round's feedback is genuinely addressed: the per-candidate `GetStopsByIDs` is hoisted into one union lookup, the entry builder's shape fetch goes through `shapePointsForTrips` with dedup, and the shapeless-trip limitation is written into the description. I also checked the spec question — `status` is required on `TripDetails` and `TripStatus` isn't nullable, so synthesizing a status with `predicted: false` for a schedule-derived trip is the right shape, not null. And the new tests do fail on main.
+
+Two things need fixing, and they're the same problem twice:
+
+**1. `inServiceTripIDs` passes the uncapped stop set straight into `GetInServiceTripIDsForStops`.** Two commits earlier in this very branch you added `candidateTripIDsForStops`, which batches that same slice at 900 per statement, with a doc comment on `stopIDsPerTripIDQuery` explaining why SQLite requires it. The new query is held to neither bound. When it trips, the error goes to `serverErrorResponse` and the whole endpoint 500s.
+
+**2. The same issue on a larger set, and this one fails silently.** `fetchStopCoordsForStopTimes(ctx, unionStopTimes(stopTimesByTrip))` gets every stop touched by every candidate trip — strictly larger than the in-bounds set above. That helper logs and returns nil on error, after which `projectStopsInSequence` writes 0 for every stop, `interpolateDistanceAtScheduledTime` returns 0, and `positionAndOrientationAtDistance` hands back `shapePoints[0]`. Every candidate then gets bounds-tested at the start of its shape and you return a wrong trip set with a 200. The `emitBlockStops` precedent this follows unions one block's trips, not a metro-wide candidate set — that's why it's safe there and not here.
+
+Both are mechanical fixes: route them through the same batching you already wrote.
+
+Non-blocking, but worth a look while you're in there:
+
+- `scheduledPositionAtTime` re-composes the exact four-helper sequence `applyScheduledTripPositionToStatus` already runs. Commit `a3fa1465` collapsed a duplicate of this same projection precisely because the copies had drifted.
+- A trip with a live vehicle but no position lands in `activeTrips`, so it's excluded from the scheduled pass and dropped entirely — even though its schedule could place it.
+
+Separately, this can't land yet regardless: the branch conflicts with `main`, and it sits on top of #1315, which sits on #1314 and #1313 — both of which still have changes requested. The base of the stack needs to clear first.
+",,,1317-035,false
+1317,4969906202,review_body,aaronbrethorst,human,false,false,true,false,"Good progress since the last round, and thank you for going wider than I asked
+on the batching — you caught four more slice-over-unbounded-set queries
+(`GetTripsByIDs` twice, `GetStopTimesForTripIDs`, `GetShapePointsByIDs`) that I
+hadn't called out. That's the right instinct.
+
+Confirming what's fixed:
+
+- **Round 1's N+1 `GetStopsByIDs`** — hoisted to one union lookup with
+  `stopsByID` threaded into `scheduledPositionAtTime`. Done.
+- **Round 2 issue 1, unbatched `GetInServiceTripIDsForStops`** — now wrapped in
+  `queryInBatches` with `ServiceIds`/`SinceMidnight` held fixed.
+- **Duplicate projection sequence** — `scheduledTripPosition` is now shared by
+  `applyScheduledTripPositionToStatus` and `scheduledPositionAtTime`.
+- **#1329 compatibility** — resolved correctly. The first draft used
+  `parsedReq.TodayMidnight`; the merge replaced it with
+  `serviceDateMidnight(parsedReq.CurrentTime, queryZone)`, and none of
+  `TodayMidnight`/`ServiceDate`/`CurrentLocation` reappear at head.
+- I also checked the things your ""Note for reviewers"" claims rather than taking
+  them on trust: the `?1`-before-slice parameter ordering does bind correctly in
+  the generated code, and both `GetStopTimesForTripIDs` and `GetShapePointsByIDs`
+  `ORDER BY` their grouping key first, so `queryInBatches` can't scramble
+  per-trip stop sequence. Good.
+
+Two things to fix.
+
+**1. `TestFetchStopCoordsForStopTimes_BatchesLargeStopSets` doesn't test
+batching** (`internal/restapi/scheduled_block_helper_test.go:493`).
+
+The test pads `stopTimes` to 1125 entries and asserts
+`require.Greater(t, len(stopTimes), idsPerBatchedQuery, ""the input must span
+more than one batch for this test to mean anything"")` — but that guard measures
+the wrong quantity. `fetchStopCoordsForStopTimes` dedupes by stop ID *before*
+calling `queryInBatches`, and RABA's `stops.txt` has exactly 375 unique stops (I
+counted). So 1125 padded rows collapse to 375 unique IDs, which is well under
+`idsPerBatchedQuery = 900`. Only one batch ever runs, and the test passes with
+the `queryInBatches` call reverted to a plain query.
+
+The test's own comment is what makes this worth fixing rather than shrugging at —
+it asserts meaningfulness it doesn't have, so the next person to touch this will
+trust it. Either assert on the deduped count, or synthesize >900 distinct stop
+IDs rather than repeating the fixture's.
+
+While you're there: `TestCandidateTripIDsForStops_BatchesLargeStopSets` and
+`TestInServiceTripIDs_BatchesLargeStopSets` do reach the multi-batch path, but at
+1125 IDs they wouldn't fail on an unbatched build either — modern SQLite defaults
+`SQLITE_MAX_VARIABLE_NUMBER` to 32766, not 999. They're testing concatenation
+correctness, which is worth having; just don't count them as limit coverage.
+
+**2. The silent-failure half of my round-2 issue 2 is still open**
+(`internal/restapi/trips_for_location_handler.go:291`).
+
+Making `scheduledPositionAtTime` fail closed on a missing stop is an improvement,
+and adding the `slog.Warn` inside the helper helps operators. But the handler
+still does:
+
+```go
+stopsByID := api.fetchStopCoordsForStopTimes(ctx, unionStopTimes(stopTimesByTrip))
+```
+
+with no error path, while the two lookups immediately above it both
+`return nil, err`. `fetchStopCoordsForStopTimes` returns nil on failure, so a DB
+error silently drops every scheduled trip and the endpoint answers 200 with a
+short list. A log line isn't the same as surfacing it — the caller gets a
+plausible-looking wrong answer. Please have the helper return an error and
+propagate it to `serverErrorResponse`, consistent with everything around it.
+
+One note, not blocking: the batching on `inServiceTripIDs` caps `StopIds` at 900,
+but the statement also carries `len(day.serviceIDs) + 1` binds, so a feed with
+more than ~98 active service IDs on a day still crosses the 999 bound that
+`idsPerBatchedQuery`'s doc comment targets. The same unbatched-`ServiceIds` shape
+exists elsewhere on main (`GetTripsByBlockIDs`,
+`GetActiveTripsWithNullBlockForRoute`), so this isn't yours to fix here — but
+it's worth an issue.
+
+Also for the record, since your description raises it: I checked whether
+`predicted`/`scheduleDeviation` should be absent rather than zero for a
+scheduled-only trip. `testdata/openapi.yml` lists them as required and
+non-nullable on `TripStatus`, so zero-valued is spec-conformant. Your test
+asserting `Status != nil` and `Predicted == false` is the right shape.
+
+Ordering: this is stacked on #1316, which I've also asked for one small change
+on. Land that first and rebase — your branch is roughly 30 commits behind main
+again by now, so it's worth doing before the next push.
+",,,1317-037,false
+1317,4989835326,review_body,burma-shave,human,false,false,true,false,"Round 3's fixes are good — stop-coordinate lookup errors now propagate instead of silently dropping candidates, and the batching test actually exercises concatenation across batches now. Both confirmed by reading the diff, not just taking the commit messages' word for it.
+
+Did a fresh spec-conformance pass against the legacy Java source (`BlockStatusServiceImpl`, `BlockCalendarServiceImpl`, `ScheduledBlockLocationServiceImpl`) for the new schedule-derived candidate path, since that's the core of what this PR adds. Two things need to change before this is Java-conformant, and they both touch `GetInServiceTripIDsForStops` / `inServiceTripIDs`, so worth doing together. Left as inline comments, plus a couple of smaller non-blocking notes.
+
+Ordering-wise, the base of the stack (#1313-#1316) is merged, so that's no longer a blocker.",,,1317-040,false
+1317,5093293134,review_body,burma-shave,human,false,false,true,true,,,,1317-049,false

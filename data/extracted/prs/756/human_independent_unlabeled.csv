@@ -1,0 +1,27 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+756,4010411899,review_body,aaronbrethorst,human,false,false,true,false,"Ahmed — this is a well-executed follow-through on the feedback from #722. The double-locking issue was a real contention point on the hot path (every API request), and switching from the thread-safe `lru.Cache` to the raw `simplelru.LRU` is the right fix since the external `sync.Mutex` already provides all the synchronization needed.
+
+Notably, this PR correctly wraps `Stop()` with the mutex — `simplelru.LRU.Purge()` mutates internal state and is not thread-safe, so it must go through the same lock as every other access. PR #755, which addresses the same issue, doesn't include this. While the current production shutdown ordering happens to be safe (because `srv.Shutdown()` drains in-flight requests before `api.Shutdown()` calls `Stop()`), omitting the lock would be safety-by-coincidence rather than safety-by-design. Your approach maintains a consistent locking invariant: every access to `limiters` goes through `rl.mu`.
+
+---
+
+### Critical Issues (0 found)
+
+None.
+
+### Important Issues (0 found)
+
+None.
+
+### Suggestions (0 found)
+
+None.
+
+### Strengths
+
+- Correctly identifies that `simplelru.LRU` requires external synchronization for **all** access paths, including `Stop()/Purge()`
+- The concurrent deduplication test is strengthened from `assert.NotNil` to `assert.Same`, which actually verifies the invariant (all goroutines get the same limiter instance, not just a non-nil one)
+- Test `mu.Lock()/Unlock()` wrapping around direct `limiters.Get()` and `.Len()` calls correctly reflects the new thread-safety contract
+- The `route_handler_test.go` bounds check is a useful defensive fix against type assertion panics
+- All tests pass including the previously-flaky `VehicleWithNilID` test (via `MockClearServiceIDsCache()`)
+- Lint clean",,,756-001,false

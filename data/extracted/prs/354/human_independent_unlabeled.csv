@@ -1,0 +1,61 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+354,3782222999,review_body,aaronbrethorst,human,false,false,true,false,"Hey Adel -- nice catch identifying the TOCTOU race condition in `GetAlertsForTrip`. You're absolutely right that accessing `manager.GtfsDB` without holding the static mutex is unsafe when `ForceUpdate` can nil it out concurrently. That said, the fix as implemented will introduce a deadlock, so I need to request changes.
+
+## Critical
+
+### Deadlock: Double `RLock()` from the same goroutine
+
+The PR adds `manager.RLock()` / `manager.RUnlock()` inside `GetAlertsForTrip`, but **all three callers already hold `staticMutex.RLock()`**:
+
+1. **`tripForVehicleHandler`** (`trip_for_vehicle_handler.go:98-99`):
+   ```go
+   api.GtfsManager.RLock()
+   defer api.GtfsManager.RUnlock()
+   // ... later at line 198:
+   alerts := api.GtfsManager.GetAlertsForTrip(r.Context(), vehicle.Trip.ID.ID)
+   ```
+
+2. **`arrivalAndDepartureForStopHandler`** (`arrival_and_departure_for_stop_handler.go:116-117`):
+   ```go
+   api.GtfsManager.RLock()
+   defer api.GtfsManager.RUnlock()
+   // ... later at line 484:
+   alerts := api.GtfsManager.GetAlertsForTrip(r.Context(), tripID)
+   ```
+
+3. **`GetSituationIDsForTrip`** (`trips_helper.go:769-771`):
+   ```go
+   // IMPORTANT: Caller must hold manager.RLock() before calling this method.
+   func (api *RestAPI) GetSituationIDsForTrip(...) []string {
+       alerts := api.GtfsManager.GetAlertsForTrip(ctx, tripID)
+   ```
+
+Go's `sync.RWMutex` is **not reentrant**. The deadlock scenario:
+
+1. **Goroutine A** (HTTP handler): Holds first `RLock()` from the handler
+2. **Goroutine B** (`ForceUpdate`): Calls `Lock()` at `static.go:251` -- blocks, waiting for A to release
+3. **Goroutine A**: Enters `GetAlertsForTrip`, calls `RLock()` again -- **blocks** because B's pending `Lock()` takes priority over new readers
+4. **Deadlock**: A waits for B, B waits for A
+
+This is documented in Go's [`sync.RWMutex` docs](https://pkg.go.dev/sync#RWMutex):
+
+> If any goroutine calls Lock while the lock is already held by one or more readers, concurrent calls to RLock will block until the writer has acquired (and released) the lock.
+
+### Recommended fix
+
+Follow the existing codebase pattern. Instead of locking inside `GetAlertsForTrip`, add the documentation comment that callers must hold the lock (they already do):
+
+```go
+// GetAlertsForTrip returns alerts matching the trip, its route, or agency.
+// IMPORTANT: Caller must hold manager.RLock() before calling this method.
+func (manager *Manager) GetAlertsForTrip(ctx context.Context, tripID string) []gtfs.Alert {
+```
+
+No `RLock()`/`RUnlock()` calls should be added inside the method. The callers already hold the lock, so the race condition is already protected -- the only thing missing is the documentation comment making this contract explicit.
+
+## Important
+
+### `GetSituationIDsForTrip` duplicates work
+
+While reviewing this, I noticed that `GetSituationIDsForTrip` (`trips_helper.go:770-781`) calls `GetAlertsForTrip` and then immediately re-queries `GetTrip` and `GetRoute` to get the `agencyID` -- the exact same DB queries that `GetAlertsForTrip` already performs internally. This isn't introduced by this PR, but it's worth noting as a follow-up optimization.",,,354-002,false
+354,3788071323,review_body,aaronbrethorst,human,false,false,true,false,"Adel, perfect — this is exactly the right fix. The deadlock-inducing `RLock()`/`RUnlock()` calls are gone, replaced by the documentation comment making the caller-holds-lock contract explicit. Clean and correct.",,,354-003,false

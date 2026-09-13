@@ -12,3 +12,11 @@ def test_style_is_not_reference():
 def test_own_comment_never_reference():
     assert in_reference_set("defect", "tejasva-vardhan") is False
     assert in_reference_set("design", "tejasva-vardhan") is False
+
+
+def test_pr_author_never_reference():
+    assert in_reference_set("defect", "other-reviewer", is_pr_author=True) is False
+
+
+def test_follow_up_observation_never_reference():
+    assert in_reference_set("design", "aaronbrethorst", about_the_change=False) is False

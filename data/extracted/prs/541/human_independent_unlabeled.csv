@@ -1,0 +1,12 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+541,3885566467,review_body,aaronbrethorst,human,false,false,true,false,"Ahmed, this is a really clean concurrency fix. The two-phase locking approach in `VehiclesForAgencyID` is the right design -- acquiring and releasing `staticMutex` before independently acquiring `realTimeMutex` eliminates the nested lock pattern entirely, which is even better than just enforcing lock ordering. The lock ordering policy documentation on the `Manager` struct is a welcome addition that will help future contributors avoid similar issues.
+
+I verified the design from several angles and everything checks out:
+
+- **TOCTOU gap between phases**: Static data could theoretically change between collecting route IDs and filtering vehicles, but this is benign for a read-only API serving best-effort snapshots. Missed or stale vehicles resolve on the next request.
+- **Handler safety after early `RUnlock()`**: The `agency` pointer remains valid because Go's GC keeps the old `gtfs.Static` data alive as long as the handler holds a reference. The old struct is never mutated -- it's replaced entirely via a new map.
+- **All callers verified**: The handler, handler test, and concurrency test all call `VehiclesForAgencyID` without holding external locks, consistent with the new contract.
+- **Variable renames**: `id` → `routeID` and `r` → `route` are pure renames that eliminate variable shadowing -- nice touch.
+
+No issues found. Approved.
+",,,541-001,false

@@ -11,7 +11,7 @@ Last updated: 2026-09-14. Status values: planned | in_progress | completed | mea
 | Protocol frozen | completed | `protocol.md` |
 | Literature notes started | in_progress | `literature.md` |
 | 30 candidate PRs listed | completed | `data/candidates.md` plus `pr_verification.csv` |
-| Human labels | planned | no `data/human_review.csv` yet |
+| Human labels | completed | `data/human_review.csv` plus `docs/human_annotation.md` (no tool scores) |
 | golangci-lint run | planned | no results |
 | LLM A / LLM B run | planned | no credentials used; do not invent keys |
 | Precision / recall / F1 | planned | **no numbers exist** |

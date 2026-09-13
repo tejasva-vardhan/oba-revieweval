@@ -1,0 +1,51 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1298,5230227249,issue,aaronbrethorst,human,false,false,true,false,"### Code review
+
+Found 1 issue:
+
+1. The `references.trips` block asserts nothing about the DUPLICATED path — it passes regardless of that behavior. In this fixture `tfr-trip` is an active scheduled trip, so it is already in `fetchedTrips`/`filteredRouteTrips` from the static loop and is emitted into `references.trips` by `buildTripReferences(..., preFetchedTrips, ...)` with route, headsign, and block populated. The DUPLICATED branch that would add it (`if !filteredRouteTrips[baseTripID] { ... }` in `trips_for_route_handler.go`) is therefore dead in this test — delete that block and these three assertions still pass. The comment claiming ""stripNumericSuffix resolved the base trip: references.trips must contain..."" misattributes what is being verified (the suffix fallback is genuinely covered, but by the `entry.Schedule` stop-ID assertions above, not by this block). To actually exercise it, the duplicated vehicle needs a base trip that is *not* independently active at the query time.
+
+https://github.com/OneBusAway/maglev/blob/00c17c02f0070c35e95abbe1ee4b7eaaa40ac574/internal/restapi/trips_for_route_handler_test.go#L238-L252
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+ - If this code review was useful, please react with 👍. Otherwise, react with 👎. 
+",,,1298-005,false
+1298,5288288278,issue,aaronbrethorst,human,false,false,true,false,"### Code review
+
+No issues found. Checked for bugs and CLAUDE.md compliance.
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+",,,1298-006,false
+1298,5459087732,issue,burma-shave,human,false,false,true,false,"@3rabiii checking in on this older PR. It is still blocked on merge conflicts from the last review. Could you please merge `main`, resolve the conflicts, and let us know when it is ready for re-review?
+",,,1298-007,false
+1298,4890748438,review_body,aaronbrethorst,human,false,false,true,false,"The schedule assertions in here are the good part — they genuinely cover the `stripNumericSuffix` fallback and confirm the suffixed trip keeps its own entry ID while carrying the base trip's stop times. The RT feed setup is correct too; `InitGTFSManager` does a synchronous first fetch, so there's no race to worry about.
+
+One assertion doesn't do what its comment claims.
+
+**The `references.trips` block is tautological for the DUPLICATED path.** In this fixture `tfr-trip` is an active scheduled trip, so it reaches `references.trips` through the ordinary static path — `fetchedTrips` → `filteredRouteTrips` → `buildTripReferences(..., preFetchedTrips, ...)` — fully populated. The handler's DUPLICATED-side resolution (`if !filteredRouteTrips[baseTripID] { ... }`, `trips_for_route_handler.go:472-479`) never executes, and deleting it entirely would leave this test green. The comment says the block verifies that `stripNumericSuffix` resolved the base trip, but that's covered by the schedule assertions instead.
+
+Since base-trip reference resolution is one of the things #1297 specifically asked for, it's worth making real: make the base trip inactive at query time, or query at a moment when only the duplicated run is live, so the fallback branch is the only way the reference can appear.
+
+The branch also conflicts with `main`, and more substantially than the conflict markers suggest: `createTestApiWithTripsForRouteFixture` no longer exists — it was replaced by a generic `createTestApiWithGTFSFixture(t, clock, zipName, files map[string]string)` plus per-scenario file maps. So your `buildTripsForRouteFixtureZip` extraction is largely redundant with what `main` now does more generally, and `createTestApiWithTripsForRouteAndRealtime` will want rebuilding on top of the new builder. Sorry — that landed while this was in the queue.
+
+Two smaller notes for the rework: the URL only passes `includeSchedule=true`, so the `DUPLICATED → (""DUPLICATED"", ""in_progress"")` status mapping is never exercised, which seems worth having in a PR with this title; and there's no assertion on list length, so a spurious extra entry would slip through.
+
+Re-review whenever it's rebased.
+",,,1298-011,false
+1298,4932966013,review_body,burma-shave,human,false,false,true,true,merge in main and fix conflicts,,,1298-012,false
+1298,4933041038,review_body,aaronbrethorst,human,false,false,true,false,"Approving on the merits — this looks good, but it can't merge as-is. See below.
+
+All four points from my last review are addressed, and the important one is genuinely fixed. I checked it rather than assuming: at the 11:30 clock the base trip falls outside the handler's -30/+10 minute window, so it can only reach `references.trips` through the DUPLICATED fallback block — delete that block and the test fails. That's the difference from last time, when the assertion held no matter what the handler did.
+
+The rest holds up too. `dupEntry.Schedule` would come back with empty stop IDs if `stripNumericSuffix` were removed, so the fallback is really exercised. `ActiveTripID` is set from the vehicle's own suffixed ID by `BuildVehicleStatus`, not the base ID, so that assertion has teeth. The `DUPLICATED`/`in_progress` pair matches `GetVehicleStatusAndPhase`, and `require.Len(..., 2)` guards against extra entries.
+
+Two things stand between this and merging, neither of them the code:
+
+1. The branch conflicts with `main` — it's one commit ahead and thirty-seven behind, and both files it touches have changed since. It needs another rebase. Sorry for the treadmill; that file is busy right now.
+2. burma-shave has a change request still open on this PR. My approval doesn't clear that one, so please square it with them before merging.
+
+While you're rebasing: the PR description still describes `buildTripsForRouteFixtureZip` and a mock GTFS-RT feed, neither of which exists in the current diff. Worth a refresh so the next reader isn't misled.
+",,,1298-013,false
+1298,4977461153,review_body,burma-shave,human,false,false,true,true,needs merge conflicts resolved again,,,1298-014,false
+1298,5093049714,review_body,burma-shave,human,false,false,true,true,,,,1298-016,false

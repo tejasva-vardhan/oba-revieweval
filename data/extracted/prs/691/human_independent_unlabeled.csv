@@ -1,0 +1,72 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+691,3946787279,review_body,aaronbrethorst,human,false,false,true,false,"Ahmed, this is a well-structured refactoring that tackles three distinct problems — race condition, double HTTP write, and scattered validation — with a single cohesive extraction. The `LocationParams` struct and `parseLocationParams` method are the right abstraction for consolidating the duplicated parsing logic across the three location handlers.
+
+## What works well
+
+- **Race condition fix**: Moving `RLock()`/`RUnlock()` above `parseAndValidateRequest` in `trips_for_location_handler.go:22-25` ensures `GetAgencies()` is safely called under the read lock.
+- **No more double writes**: Removing the direct `ResponseWriter` writes from inside `parseLocationParams` and instead returning errors for the caller to handle is the correct pattern.
+- **Error aggregation**: The `fieldErrors` map threading through `parseLocationParams` → `ParseMaxCount` → etc. means clients see all validation problems in a single response instead of having to fix-and-retry one at a time.
+- **`err` → `serverErr` rename** in `parseAndValidateRequest` makes the distinction between field validation errors and server errors immediately clear.
+
+## Fit and Finish (1 found)
+
+### 1. Return `nil` instead of the `fieldErrors` map on the happy path — `location_params.go:47`
+
+When all parsing and validation succeeds, line 47 returns:
+
+```go
+return &LocationParams{...}, fieldErrors
+```
+
+At this point `fieldErrors` is either `nil` or an empty map (depending on what the upstream `ParseFloatParam` calls returned). Both work correctly at call sites since callers check `len(fieldErrors) > 0`, but returning `nil` explicitly on the success path is more idiomatic and removes any ambiguity:
+
+```go
+return &LocationParams{
+    Lat:     lat,
+    Lon:     lon,
+    Radius:  radius,
+    LatSpan: latSpan,
+    LonSpan: lonSpan,
+}, nil
+```
+
+This is cosmetic — the current code is functionally correct.
+
+## Checklist
+
+- [x] Tests pass
+- [x] Lint clean (pre-existing `errcheck` in `gtfs_manager_test.go` is on `main`)
+- [x] `go fmt` clean
+- [x] Race condition addressed
+- [x] Double HTTP write resolved
+- [x] Error aggregation unified across all three handlers
+
+## Merge Conflicts
+
+This branch currently has merge conflicts with `main` that will need to be resolved before merging. Please rebase or merge `main` into your branch and resolve the conflicts.
+
+## Recommended Action
+
+**Merge** (after resolving conflicts). The fit-and-finish item is optional and can be addressed at your discretion.
+",,,691-002,false
+691,3977929112,review_body,aaronbrethorst,human,false,false,true,false,"Ahmed, everything from the last round is addressed — the `nil` return on the happy path is in place, and the merge conflicts are resolved. Clean follow-up.
+
+## Previous Feedback Status
+
+- [x] Return `nil` instead of `fieldErrors` on happy path (`location_params.go:47`) — fixed
+- [x] Merge conflicts with `main` — resolved
+
+## Checklist
+
+- [x] Tests pass
+- [x] Lint clean (pre-existing `errcheck` in `gtfs_manager_test.go` is on `main`)
+- [x] `go fmt` clean
+- [x] No merge conflicts
+- [x] Race condition fix verified (`RLock` before `parseAndValidateRequest` in `trips_for_location_handler.go:23-24`)
+- [x] Double HTTP write resolved (no `ResponseWriter` writes inside `parseLocationParams`)
+- [x] Error aggregation unified across all three location handlers
+
+## Verdict
+
+**Merge** — ready to go.
+",,,691-003,false

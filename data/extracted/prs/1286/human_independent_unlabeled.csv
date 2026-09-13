@@ -1,0 +1,49 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1286,5230225875,issue,aaronbrethorst,human,false,false,true,false,"### Code review
+
+Found 1 issue:
+
+1. The per-trip service day is threaded into the entry's `serviceDate` but not into the status built four lines above, which still receives `todayMidnight`. For exactly the past-midnight trips this PR targets, the same entry now reports two different service dates — `serviceDate` = yesterday's midnight, `status.serviceDate` = today's midnight (`BuildTripStatus` sets `status.ServiceDate` from that parameter in `internal/restapi/trips_helper.go`). Worse, `BuildTripStatus` also uses that value as the epoch for `GetScheduleDeviationForBlock`, `calculateOffsetForStop` and the distance-along-trip math, so for a trip whose stop times are 24:00–25:00 the seconds-since-service-date lands before its first arrival — `position`, `closestStop`, and `scheduleDeviation` stay 24 hours off. Hoisting the `serviceDate` computation above the `includeStatus` block and passing it to `BuildTripStatus` would make the whole entry self-consistent (bug due to `status, statusErr = api.BuildTripStatus(ctx, agencyID, tripID, nil, todayMidnight, currentTime)`)
+
+https://github.com/OneBusAway/maglev/blob/60cc46cbfd7977c68634ecd5533c8d4e49b52f39/internal/restapi/trips_for_route_handler.go#L370-L395
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+<sub>- If this code review was useful, please react with 👍. Otherwise, react with 👎.</sub>
+",,,1286-002,false
+1286,5459087586,issue,burma-shave,human,false,false,true,false,"@3rabiii checking in on this older PR. It is still blocked on merge conflicts from the last review. Could you please merge `main`, resolve the conflicts, and let us know when it is ready for re-review?
+",,,1286-003,false
+1286,5548030169,issue,burma-shave,human,false,false,true,false,@coderabbit review,,,1286-004,false
+1286,5548284713,issue,burma-shave,human,false,false,true,false,"@3rabiii checking in on this older PR. It is still marked dirty after the earlier conflict request, and CodeRabbit now has an open follow-up as well. Could you please merge `main`, resolve the conflicts/review comments, and let us know when it is ready for re-review?
+",,,1286-006,false
+1286,3769940489,inline,burma-shave,human,false,false,true,false,"**Bug: DUPLICATED trips can still report the wrong `serviceDate` past midnight.**
+
+`tripServiceDay` is only populated from the null-block and block-matching queries above, both constrained to the ±30min/+10min window around `currentTime` (`timeRangeStart`/`timeRangeEnd`). But `GetDuplicatedVehiclesForRoute` (`internal/gtfs/gtfs_manager.go:610`) pulls DUPLICATED vehicles straight from the real-time feed, indexed only by route ID — entirely independent of that time window. A DUPLICATED trip genuinely active past midnight whose base trip falls outside the window (plausible, since real-time DUPLICATED vehicles aren't bound by it at all) will miss `tripServiceDay[baseTripID]` and fall back to `todayMidnight` here — the same 24h-off bug this PR fixes for regular trips, just missed for DUPLICATED ones.
+
+Worth resolving the service day independently for DUPLICATED trips too (e.g. by checking whether `baseTripID`'s scheduled stop times place `currentSinceMidnight` in the previous day's window, the same way the null-block/block paths do), and adding a regression test with a DUPLICATED trip crossing midnight.",internal/restapi/trips_for_route_handler.go,,1286-010,false
+1286,3769940493,inline,burma-shave,human,false,false,true,false,"**Nit: duplicated lookup pattern.** This `tripServiceDay` lookup-with-fallback (`serviceDate := todayMidnight; if midnight, ok := tripServiceDay[id]; ok { serviceDate = midnight }`) is duplicated verbatim here and at lines 482-485 for the DUPLICATED-trip branch. Consider extracting a small helper, e.g. `serviceDateFor(tripServiceDay, id, todayMidnight)`, so both call sites stay in sync if the fallback logic ever changes.",internal/restapi/trips_for_route_handler.go,,1286-011,false
+1286,3769940497,inline,burma-shave,human,false,false,true,false,"**Missing test coverage.** This guard prioritizes a current-day null-block match over a same-trip-ID previous-day match, protecting >23h-active trips from having their service day overwritten by the previous-day loop. No fixture currently constructs a trip ID appearing in both `nullBlockTrips` (today) and `prevNullBlockTrips` to exercise it — worth a regression test per CONTRIBUTING.md's expectation that new branches get coverage.",internal/restapi/trips_for_route_handler.go,,1286-012,false
+1286,4890748384,review_body,aaronbrethorst,human,false,false,true,false,"The core approach is right: a per-trip service-day map is the correct shape for this, and using `AddDate(0, 0, -1)` rather than subtracting 24h is the DST-safe way to get the previous midnight. The two overnight fixtures with a mock clock at 00:30 are genuine tests — they'd fail against the old unconditional today's-midnight.
+
+The fix stops one line short, though.
+
+**`BuildTripStatus` still receives `todayMidnight`.** The resolved per-trip service date is used only for `entry.ServiceDate`; the status built immediately above it still gets today's midnight, and `BuildTripStatus` sets `status.ServiceDate` from that parameter. So a past-midnight trip now carries two contradicting service dates in the same entry — and, more importantly, the status's schedule-deviation, closest-stop, and distance-along-trip math stays 24h off for exactly the trips this PR is about. Before the change both fields were consistently wrong; now they disagree, which is harder to debug.
+
+Threading the resolved `serviceDate` into `BuildTripStatus` should be all it takes. For reference, #1316 does exactly this and gets both fields agreeing — worth a look at how it's structured there.
+
+Also: the branch now conflicts with `main`. `trips_for_route_handler.go` has gained interlined-block resolution since you cut it, and the entry loop distinguishes `tripID` from a resolved `entryTripID`, so the `tripServiceDay` lookup will need to be keyed deliberately against one or the other. The test file also gained a generic `createTestApiWithGTFSFixture(t, clock, zipName, files)` helper, which should let you drop both of your near-identical fixture builders in favor of two file maps.
+
+One smaller thing: in the null-block path, `tripServiceDay[id] = prevDayMidnight` overwrites an earlier `todayMidnight` for the same trip, whereas the block path iterates today-first and breaks, so today wins there. Only reachable for a >23h trip active on both days, but the two paths should agree.
+
+Happy to re-review once it's rebased and the status date is threaded through.
+",,,1286-016,false
+1286,4920685807,review_body,burma-shave,human,false,false,true,false,"## Review summary
+
+**Spec conformance** (`/oba-api-review`, cross-checked against legacy Java and the maglev.wiki spec): no deviations found. This brings `trips-for-route` in line with already-documented spec (mirroring Java's `BlockStatusServiceImpl`/`BlockCalendarServiceImpl` resolving candidate service dates against the block's own scheduled time range). Client-impact check found no adverse impact on Wayfinder, the JS SDK, or iOS (iOS doesn't call this endpoint), and a net-positive fix for Android's schedule-overlay extrapolation, which was silently 24h misaligned for overnight trips before this fix.
+
+**Code quality**: one correctness bug in the DUPLICATED-trip path below should be fixed before merge; two test-coverage gaps and one small duplication nit are also flagged.
+
+(For context: CodeRabbit's earlier comment about missing block-path test coverage is already resolved by the `test: add past-midnight block trip test coverage` commit, and a previous review comment about `BuildTripStatus` receiving the wrong `serviceDate` for regular entries is already resolved by the `fix: synchronize serviceDate across trip entries and statuses` commit — no further action needed on either.)
+",,,1286-018,false
+1286,4977446881,review_body,burma-shave,human,false,false,true,true,Just needs merge conflicts resolved,,,1286-019,false
+1286,5160177884,review_body,burma-shave,human,false,false,true,true,,,,1286-022,false

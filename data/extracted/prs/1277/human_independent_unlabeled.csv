@@ -1,0 +1,73 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1277,5230204795,issue,aaronbrethorst,human,false,false,true,false,"### Code review
+
+No issues found. Checked for bugs and CLAUDE.md compliance.
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+",,,1277-004,false
+1277,3769501057,inline,burma-shave,human,false,false,true,false,"`routeReferenceByID` builds the route reference using the caller's `agencyID` parameter instead of the row's own `route.AgencyID` (via `buildRouteModels`, which always stamps whatever `agencyID` it's passed). This reintroduces the same class of bug fixed in e8de6a5 (""Fix route agency mis-prefixing in trip-for-vehicle references"") for the stops-derived route path just above (`routeReferencesForStops`, which correctly keys/labels by `row.AgencyID`).
+
+On a feed where the trip's route belongs to a different agency than the vehicle's own `agencyID` (multi-agency GTFS), this would re-prefix and mislabel the route with the wrong agency ID, producing a `references.routes` entry a client can't actually resolve.
+
+Suggest building the reference from `route.AgencyID` rather than the passed-in `agencyID`, matching `routeReferencesForStops`.",internal/restapi/reference_utils.go,,1277-022,false
+1277,3769501069,inline,burma-shave,human,false,false,true,false,"This always issues a fresh `GetRoute` query for the trip's active route, even though that same route is often already present in `routeRefs` from `BuildStopReferencesAndRouteIDsForStops` a few lines above (the trip's own route commonly also serves its closest/next stop). Worth checking `routeRefs` for the combined route ID before calling `routeReferenceByID`, to skip the redundant DB round trip in the common case.",internal/restapi/trip_for_vehicle_handler.go,,1277-023,false
+1277,3769501080,inline,burma-shave,human,false,false,true,false,"`parseIncludeParam` is a generic boolean query-param parser with fallback — per CONTRIBUTING.md's parameter-parsing convention, this shape belongs in `internal/utils/api.go` alongside the other `Parse*` helpers (`ParseFloatParam`, `ParseTimeParameter`, etc.) rather than living locally in this handler file.",internal/restapi/trip_details_handler.go,,1277-024,false
+1277,3786346201,inline,burma-shave,human,false,false,true,false,"`buildTripForVehicleReferences` only ever appends the vehicle's own agency to `references.Agencies`, even though `routeReferenceForTrip`/`routeReferenceByID` (added in this PR) can now resolve the active trip's route from a *different* agency than the vehicle's own.
+
+`TestTripForVehicleHandler_RouteFromAnotherAgency` (added in this PR) already exercises this exact scenario — a route from `OTHERAGENCY` — and confirms the route reference correctly carries the `OTHERAGENCY_` prefix. But the test never asserts on `references.Agencies`, so it doesn't catch that `OTHERAGENCY` itself is missing from that list. A client resolving `references.routes[0].agencyId` against `references.agencies` won't find a matching entry.
+
+`arrival_and_departure_for_stop_handler.go:434-443` already has the right pattern for this — fetch and append the route's own agency when it differs from the primary one:
+```go
+if route.AgencyID != stopAgency.ID {
+    routeAgency, err := api.GtfsManager.GtfsDB.Queries.GetAgency(ctx, route.AgencyID)
+    if err == nil {
+        references.Agencies = append(references.Agencies, models.AgencyReferenceFromDatabase(&routeAgency))
+    } else {
+        api.Logger.Warn(""failed to fetch route agency for reference"", ""agencyID"", route.AgencyID, ""error"", err)
+    }
+}
+```
+Worth applying the same here, and extending `TestTripForVehicleHandler_RouteFromAnotherAgency` to assert `references.Agencies` contains the route's agency.",internal/restapi/trip_for_vehicle_handler.go,,1277-025,false
+1277,3786346205,inline,burma-shave,human,false,false,true,false,"Minor readability nit: this map of `*bool` pointers exists to loop over three fixed, compile-time-known fields. Three explicit calls read top-to-bottom without the indirection of dereferencing a pointer and cross-referencing a map key back to a struct field:
+```go
+params.IncludeTrip, fieldErrors = utils.ParseBoolParam(query, ""includeTrip"", params.IncludeTrip, fieldErrors)
+params.IncludeSchedule, fieldErrors = utils.ParseBoolParam(query, ""includeSchedule"", params.IncludeSchedule, fieldErrors)
+params.IncludeStatus, fieldErrors = utils.ParseBoolParam(query, ""includeStatus"", params.IncludeStatus, fieldErrors)
+```
+Not a bug, just a step down in directness for a fixed, small set of fields — per CONTRIBUTING's readability guidance on avoiding unnecessary indirection.",internal/restapi/trip_details_handler.go,,1277-026,false
+1277,4890748195,review_body,aaronbrethorst,human,false,false,true,false,"Thanks for this — the spec work here is solid. I checked the defaults against `testdata/openapi.yml` myself and they're right: `includeTrip` defaults to false for trip-for-vehicle (line 806) and to true for trip-details, and the `TripParamDefaults` struct expresses that cleanly. The `parseTripParams` refactor is behavior-preserving, and putting `routeReferenceByID` in `reference_utils.go` is the correct home for it per CONTRIBUTING's Code Reuse section. Flagging the shared-helper impact on `trip-details` in the PR description was the right call too.
+
+One blocker before this can land.
+
+**A missing route reference now 404s the entire request.** In `trip_for_vehicle_handler.go`, the new `routeReferenceByID` lookup turns `sql.ErrNoRows` into `sendNotFound`. That lookup is reference enrichment, not the primary resource — the vehicle and the trip were both found successfully by that point, and the trip reference has already been appended to `references.Trips` and is then thrown away. For a feed with a dangling `trips.route_id`, this endpoint stops serving trip details entirely rather than serving them with one route reference absent.
+
+CONTRIBUTING's `ErrNoRows` → 404 rule is about the resource the request names, not about entities you're dereferencing into the references block. The rest of the codebase already treats those differently: `BuildRouteReferences` goes through the batch `GetRoutesByIDs`, where an absent row simply doesn't appear in the result.
+
+The fix is small — on `ErrNoRows`, log and skip the route reference (keeping the trip reference you already built) and let the response go out as a 200. Any other error should still be a 500, which you have right.
+
+Also worth knowing for sequencing: #1279 has landed and #1281 is ahead of you in the queue, both touching this same references block. You'll want to rebase onto `main` once #1281 goes in.
+
+Happy to re-review as soon as the 404 path is sorted.
+",,,1277-028,false
+1277,4920186760,review_body,burma-shave,human,false,false,true,false,"Reviewed against legacy Java (`TripStatusBeanServiceImpl` / `BeanFactoryV2`, traced directly rather than taken from the wiki) and against `/code-review medium`, CodeRabbit, and SonarQubeCloud findings on this PR.
+
+The core fix is spec-correct and well-tested: the active trip (and now its route) is added to `data.references` whenever a `status` block is built, independent of `includeTrip`, and `trip-for-vehicle`'s `includeTrip` default now correctly matches the spec's documented `false`. Confirmed directly against `TripStatusBeanServiceImpl.getBlockLocationAsStatusBean` and `BeanFactoryV2.getTripStatus`, both of which add the active trip to references with no dependency on `includeTrip`.
+
+Found one correctness bug and two minor cleanup opportunities in the new code — see inline comments.
+
+This PR's own description invokes `trip-for-vehicle.md`'s Extension 4b directly. Tracing that same `includeTrip`/`status` interaction through the Java source (`TripStatusBeanServiceImpl.getBlockLocationAsStatusBean` L294-295, `BeanFactoryV2.getTripStatus` L528-537) shows the sibling `trip-details` endpoint has the identical exemption — the active trip is added to references whenever a `status` block is built, regardless of `includeTrip` — and `trip_details_handler.go`'s existing (unchanged) code already implements it correctly. `trip-details.md`'s Extension 4c didn't document this exemption at all, describing `includeTrip=false` as suppressing the trip record with no carve-out.
+
+No code change is needed here, since `trip_details_handler.go` already behaves correctly — I've corrected the wiki text on our end to match `trip-for-vehicle.md`'s Extension 4b language, so the spec stops contradicting itself across two endpoints backed by the same Java code path. Flagging it here for visibility since it surfaced directly from this PR's own change.",,,1277-031,false
+1277,4940238409,review_body,burma-shave,human,false,false,true,false,"Reviewed the includeTrip/includeStatus fix for trip-for-vehicle. The core fix (active trip + route always added to references when status is present, includeTrip default corrected to false) is spec-consistent and well tested — verified against the legacy Java implementation and confirmed no client impact across Wayfinder, JS SDK, iOS, and Android.
+
+Two things worth addressing before merge, both scoped to this PR's own diff:
+
+1. A correctness gap in the new cross-agency route handling (blocking).
+2. A readability nit in the new include-param parsing loop (non-blocking, but worth cleaning up).
+
+See inline comments.
+
+---
+
+Process note: this branch was force-pushed after earlier review comments (CodeRabbit and a human reviewer) had already landed on it. All of those prior comments are now anchored to commit `d1ce9c0`, which isn't an ancestor of the current head (`f8c2762`) — the history was rewritten out from under them. Everything they flagged does still appear addressed in the current code, but confirming that required re-checking each one against live source rather than trusting the ""addressed in commit X"" annotations, since those referenced commits are dangling too. Per CONTRIBUTING.md: ""Add new commits when addressing requested changes — don't rewrite already-reviewed history. Rebasing or force-pushing after review has started means the whole PR has to be re-reviewed."" Please avoid force-pushing this branch again once review is underway — use merge commits or additional commits to resolve conflicts instead, so reviewers don't have to redo work that's already been done.",,,1277-033,false
+1277,4941272941,review_body,burma-shave,human,false,false,true,true,,,,1277-034,false
