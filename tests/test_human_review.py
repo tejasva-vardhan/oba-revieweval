@@ -54,9 +54,9 @@ def test_human_review_csv_covers_the_recommended_corpus():
     summary = annotation_summary(rows)
     assert summary["pr_count"] == 33
     assert summary["independent_comment_count"] == 198
-    assert summary["ambiguous_count"] == 2
+    assert summary["ambiguous_count"] == 0
     assert summary["class_counts"]["process_other"] >= 1
-    assert "question" not in summary["class_counts"]
+    assert summary["class_counts"]["question"] == 2
     assert summary["primary_reference_set_count"] == 75
     gold = [row for row in rows if row["in_reference_set"] == "true"]
     assert all(row["class"] in {"defect", "design"} for row in gold)

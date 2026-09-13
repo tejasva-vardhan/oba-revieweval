@@ -36,9 +36,9 @@ Protocol §7 / annotation schema: primary gold = non-author human comments label
 
 Style, question, and process_other comments are recorded so every independent `comment_id` is covered. They are **not** issues automated systems are expected to detect. Review-comment presence is not the same as software-defect presence.
 
-Final provisional primary-reference count: **75** unique atomic findings (33 defect, 42 design).
+Frozen primary-reference count: **75** unique atomic findings (33 defect, 42 design).
 
-This count is **not** a freeze while two findings remain `annotation_status=ambiguous`. Those two are excluded from gold until resolved.
+Frozen on 2026-09-14 after resolving the two remaining ambiguities. No `annotation_status=ambiguous` rows remain.
 
 ## Gold-set decision rule used here
 
@@ -61,7 +61,7 @@ Rule 5 is a Phase 5 operationalization, not a silent protocol rewrite. Evaluatio
 - Pre-existing / other-handler / “not this PR” / “follow-up” observations
 - Later restatements of an already-golded unique issue (same reviewer or another reviewer). The first complete instance is gold; later copies are stored with `in_reference_set=false` and a restatement note
 - Bugs a PR already fixed, when the later review only confirms the fix
-- Ambiguous findings, until resolved
+- Hypothetical / non-blocking “second look” notes that are not concrete defect or design issues in the merge-anchored change (see ambiguous-case resolution below)
 
 ## Atomicization
 
@@ -75,16 +75,25 @@ Original GitHub text is stored in `original_comment`. `normalized_issue` is a co
 2. Human logins posting Claude-generated review text are **not** bots. They are classified by what the posted text communicates.
 3. `in_reference_set` in code now also takes `is_pr_author` and `about_the_change`. That implements protocol §7 plus the operationalization above.
 
-## Ambiguous findings (unresolved)
+## Ambiguous-case resolution (2026-09-14)
 
-Do not treat the reference set as frozen until these are decided.
+Both leftover findings were resolved from the merge-anchored PR diffs, the exact review text, and surrounding code. No model or linter output was used. `protocol.md` was not changed.
 
-| atomic_issue_id | PR | Why unresolved |
-|---|---|---|
-| `H-1313-3771182794-1` | #1313 | Reviewer flags a possible unprefixed alert ID when `routeAgencyMap` misses, then says reachability is unclear and it is “not necessarily blocking.” |
-| `H-1407-5055923018-7` | #1407 | Reviewer flags `alertAgencyID` as a future multi-stop trap and says it is “worth flagging”; requested changes were primarily items 1–2. |
+### `H-1313-3771182794-1` → `question`, not gold
 
-Both are stored with `annotation_status=ambiguous` and `in_reference_set=false`.
+1. **What the reviewer identified.** burma-shave noted that if a trip is in `tripsByID` but its route is missing from `routeAgencyMap`, `agencyID` could be `""` and `situationID()` could emit a bare alert ID. They called the collision risk “theoretical,” said reachability depends on whether `GetRoutesByIDs` can return fewer routes than `routeIDSet`, and asked for “a second look, not necessarily blocking.”
+2. **What the code actually does.** In the merge-anchored `#1313` diff, `tripSituationRefs` does not fall through with an empty agency. If the trip is unindexed *or* `routeAgencyMap` has no entry, it returns `situationRefsForTrip`, which resolves route/agency itself. A comment in that hunk states the empty-agency risk and the fallback. `TestTripSituationRefsAgencyFallback` covers both a populated map and an empty map and requires the combined-form ID on both paths.
+3. **Reachable / actionable?** The silent bare-ID path the comment describes is not present in the change under evaluation. The reviewer also did not treat the note as a required change.
+4. **Class / gold.** `question`, `in_reference_set=false`. This is a reachability check, not a concrete defect or a design change the reviewer required.
+5. **Why this follows the rules.** Defect requires a concrete correctness problem **in the change**. Design requires a maintainability/API problem the reviewer **treats as needing a change**. Neither holds. Golding it would expect tools to report a bug the merge-anchored diff already guards.
+
+### `H-1407-5055923018-7` → `question`, not gold
+
+1. **What the reviewer identified.** Item 7 of burma-shave’s review is labeled “Design note.” If a *future* arrivals-for-location caller looped `arrivalsForStop` across agencies on one accumulator, `alertAgencyID` could lock to the first agency. They said it was “worth flagging.” Requested changes were “primarily on #1 and #2”; the rest were follow-up candidates.
+2. **What the code actually does.** This PR’s only production caller is the single-stop handler (`newArrivalsAccumulator(stopAgencyID)`). Stop-level alerts use that same scalar. The merge-anchored comment on `arrivalsAccumulator` says the field is “single-caller by design” and that a multi-stop caller “must pass a per-stop agency ID to `situations.add` directly instead.”
+3. **Reachable / actionable?** The mis-namespace path requires a second caller that does not exist in this PR. Current single-stop behavior matches the pre-extract `alertAgencyID := stopAgencyID` local. The reviewer did not request a change to the field for this merge.
+4. **Class / gold.** `question`, `in_reference_set=false`. Future-caller hypothetical; not a concrete current design issue the reviewer treated as needing a change.
+5. **Why this follows the rules.** Design is “a maintainability or API-shape problem that a reviewer treats as needing a change (not mere taste).” A “worth flagging” note deferred behind two merge blockers is not that. Defect does not apply: current responses are not wrong.
 
 ## Clean-change PRs
 
@@ -102,7 +111,7 @@ They remain in the corpus. They are not dropped to improve later scores.
 - every independent `comment_id` is covered
 - no study-author, PR-author, or bot rows
 - process_other is never gold
-- ambiguous rows are never gold
+- no `annotation_status=ambiguous` rows remain after freeze
 - original comment text matches the unlabeled extract
 - extract CSVs still have empty `class` / `in_reference_set` label columns
 - rebuilding from `phase5_atoms.py` matches `data/human_review.csv`
@@ -114,13 +123,13 @@ They remain in the corpus. They are not dropped to improve later scores.
 | PRs | 33 |
 | Independent human comments | 198 |
 | Atomic findings | 266 |
-| defect | 57 |
-| design | 77 |
+| defect | 56 |
+| design | 76 |
 | style | 16 |
-| question | 0 |
+| question | 2 |
 | process_other | 116 |
 | Primary reference set | 75 |
-| Ambiguous | 2 |
+| Ambiguous | 0 |
 
 Findings by stratum: concurrency 22, api_gtfs 167, database 32, test_refactor 45.
 

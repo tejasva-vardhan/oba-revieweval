@@ -134,7 +134,7 @@ ATOMS: list[Atom] = [
     (1313, 3771182780, 1, "design", "Same duplicate TripSituations lookup on arrival-and-departure-for-stop.", "internal/restapi/arrival_and_departure_for_stop_handler.go", "", "resolved", "", True),
     (1313, 3771182784, 1, "design", "GetSituationIDsForTrip should delegate to TripSituations instead of copying the loop.", "internal/restapi/trips_helper.go", "", "resolved", "", True),
     (1313, 3771182788, 1, "design", "DUPLICATED trips miss tripsByID so situation lookups always hit the DB.", "internal/restapi/trips_for_route_handler.go", "", "resolved", "", True),
-    (1313, 3771182794, 1, "defect", "Missing routeAgencyMap entry yields a bare unprefixed alert ID.", "internal/restapi/trips_for_route_handler.go", "", "ambiguous", "reviewer asked for a second look and said not necessarily blocking; reachability unclear. Excluded from gold until resolved.", False),
+    (1313, 3771182794, 1, "question", "Whether a missing routeAgencyMap entry can emit a bare alert ID.", "internal/restapi/trips_for_route_handler.go", "", "resolved", "Resolved 2026-09-14: reviewer asked for a second look and said not necessarily blocking. Merge-anchored tripSituationRefs already falls back to situationRefsForTrip when the agency is unknown; TestTripSituationRefsAgencyFallback requires combined-form IDs. Not a concrete defect/design in the changed code.", False),
     (1313, 4922067762, 1, "process_other", "Stage-2 summary pointing at the redundant-lookup inlines.", "", "", "resolved", "", False),
     # 1315
     (1315, 5230249974, 1, "process_other", "Claude-authored 'no issues found' comment posted by a human login.", "", "", "resolved", "", False),
@@ -267,7 +267,7 @@ ATOMS: list[Atom] = [
     (1407, 5055923018, 4, "design", "arrivalsReferencesInput.stopAgencies is never populated.", "internal/restapi/arrivals_core.go", "", "resolved", "", True),
     (1407, 5055923018, 5, "design", "Route/stop reference building bypasses reference_utils helpers.", "internal/restapi/arrivals_core.go", "", "resolved", "", True),
     (1407, 5055923018, 6, "design", "Singular arrival-and-departure handler still duplicates the extracted reference logic.", "internal/restapi/arrival_and_departure_for_stop_handler.go", "", "resolved", "reviewer said follow-up", False),
-    (1407, 5055923018, 7, "design", "alertAgencyID is a single scalar despite the accumulator being documented as multi-stop.", "internal/restapi/arrivals_core.go", "", "ambiguous", "reviewer said worth flagging; requested changes were primarily items 1-2. Excluded from gold until resolved.", False),
+    (1407, 5055923018, 7, "question", "Whether a shared alertAgencyID scalar could mis-namespace alerts for a future multi-stop caller.", "internal/restapi/arrivals_core.go", "", "resolved", "Resolved 2026-09-14: reviewer labeled this a design note, said worth flagging, and requested changes only on items 1-2. Current PR has one single-stop caller. Merge-anchored comment documents the field as single-caller by design. Future-caller hypothetical; not a concrete current design issue.", False),
     # 1428
     (1428, 5151390767, 1, "design", "Assert DistanceAlongBlock through callAPIHandler / real GetBlockDetails instead of hand-built rows.", "internal/restapi/block_handler_test.go", "", "resolved", "", True),
     (1428, 5599665947, 1, "defect", "Unused gtfsdb import in block_handler_test.go fails go vet.", "internal/restapi/block_handler_test.go", "", "resolved", "", True),

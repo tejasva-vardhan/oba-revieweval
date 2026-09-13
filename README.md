@@ -19,7 +19,7 @@ See [research_questions.md](research_questions.md) and the frozen [protocol.md](
 | 30-PR candidate list | Frozen discovery list preserved |
 | Phase 4 verification | Complete (2026-09-14). See `docs/data_collection.md` |
 | Raw corpus export | Complete: all 33 recommended PRs in `data/raw/prs/` |
-| Human labels | Phase 5 table written 2026-09-14. Two findings remain ambiguous; see `docs/human_annotation.md`. Not a tool-score freeze. |
+| Human labels | Frozen 2026-09-14. Primary reference set = 75 defect/design findings. See `docs/human_annotation.md`. |
 | LLM or linter runs | Not started |
 | Report | Not written |
 

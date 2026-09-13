@@ -328,6 +328,8 @@ def validate_human_review(
                 errors.append(f"{row['atomic_issue_id']}: study author in reference set")
         if row["class"] == "process_other" and row["in_reference_set"] == "true":
             errors.append(f"{row['atomic_issue_id']}: process comment treated as gold")
+        if row["annotation_status"] == "ambiguous":
+            errors.append(f"{row['atomic_issue_id']}: unresolved ambiguous finding after freeze")
 
     extract_keys = {(row["pr_id"], row["comment_id"]) for row in comments}
     if extract_keys != covered:
