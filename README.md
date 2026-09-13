@@ -14,20 +14,24 @@ See [research_questions.md](research_questions.md) and the frozen [protocol.md](
 
 | Artifact | Status |
 |---|---|
-| Protocol | Frozen for the pilot (2026-09-13) |
+| Protocol | Frozen for the pilot (2026-09-13). Not amended. |
 | Literature notes | Started |
-| 30-PR candidate list | Identified; human-vs-bot review not fully verified (no GitHub token) |
-| Diffs / labels / metrics | Not collected |
+| 30-PR candidate list | Frozen discovery list preserved |
+| Phase 4 verification | Complete (2026-09-14). See `docs/data_collection.md` |
+| One-PR export | `#702` in `data/raw/prs/702/` |
+| Human labels | Not started (Phase 5) |
 | LLM or linter runs | Not started |
 | Report | Not written |
 
-Do not cite numbers from this repository until `results/` contains generated tables.
+Do not cite precision/recall numbers from this repository. None exist yet.
+
+**Phase 4 headline:** 30 original candidates checked; **26** eligible for primary gold; **4** excluded; recommended corpus **n = 33** if the 7 additional concurrency PRs with independent human review are included. The study should say `n = 33` (or `n = 26` if extras are held out), not pretend `n = 30`.
 
 ## Why this corpus
 
 Maglev is a Go rewrite of the OneBusAway REST API (GTFS import, SQLite queries, HTTP handlers, real-time vs schedule behavior). The author of this study is a Maglev contributor. That is a **data-access and annotation** advantage, not a novelty claim.
 
-**Ground-truth rule:** the author's own review comments are never independent gold. Author-authored PRs enter the primary set only if another human left review or issue comments that can be labeled. GitHub issue-comment checks on 2026-09-13 found independent humans on `#507` and `#702` only. Other author PRs stay out of the gold set unless Phase 4 finds review submissions that the unauthenticated comment APIs missed.
+**Ground-truth rule:** the author's own review comments are never independent gold. Author-authored PRs enter the primary set only if another human left review or issue comments that can be labeled. Phase 4 confirmed independent humans on `#507` and `#702` via `/pulls/{n}/reviews`. `#457` also has independent review bodies; it was **not** silently inserted into the frozen 30 and is listed as an additional accept.
 
 ## Repository layout
 
@@ -59,15 +63,14 @@ pytest
 
 Copy `.env.example` to `.env` only when you are ready to call a model API. **Do not commit `.env`.**
 
-## Reproduce one PR (after export exists)
+## Reproduce one PR
 
-1. Confirm `data/candidates.md` lists the PR and that human comments are non-bot.
-2. `python scripts/export_prs.py --pr 702` (export is not implemented until Phase 4).
-3. `python scripts/run_linter.py --pr 702` (requires a local Maglev checkout; not run in this scaffold).
-4. `python scripts/run_models.py --pr 702` (requires API credentials; stop rather than invent keys).
-5. `python scripts/score_findings.py` then `python scripts/generate_tables.py`.
+1. Read `docs/data_collection.md` and confirm `#702` is eligible.
+2. With `GITHUB_TOKEN` set: `python scripts/export_prs.py --pr 702`. From cache: add `--cache-only`.
+3. Inspect `data/raw/prs/702/` and unlabeled partitions in `data/extracted/prs/702/`.
+4. Do **not** run `scripts/run_linter.py` or `scripts/run_models.py` until later phases.
 
-Until those scripts are implemented, `pytest` only checks schemas and scoring functions.
+`pytest` checks schemas, eligibility, bot/author rules, and the verification artifacts.
 
 ## Ethics and privacy
 

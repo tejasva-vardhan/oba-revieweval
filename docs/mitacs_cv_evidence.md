@@ -1,6 +1,6 @@
 # Mitacs CV evidence (verified only)
 
-Last updated: 2026-09-13. Status values: planned | in_progress | completed | measured_result.
+Last updated: 2026-09-14. Status values: planned | in_progress | completed | measured_result.
 
 ## OBA-ReviewEval
 
@@ -10,7 +10,7 @@ Last updated: 2026-09-13. Status values: planned | in_progress | completed | mea
 | Research question and hypothesis written | completed | `research_questions.md` |
 | Protocol frozen | completed | `protocol.md` |
 | Literature notes started | in_progress | `literature.md` |
-| 30 candidate PRs listed | in_progress | `data/candidates.md` — human-vs-bot not fully verified |
+| 30 candidate PRs listed | completed | `data/candidates.md` plus `pr_verification.csv` |
 | Human labels | planned | no `data/human_review.csv` yet |
 | golangci-lint run | planned | no results |
 | LLM A / LLM B run | planned | no credentials used; do not invent keys |
@@ -21,7 +21,7 @@ Last updated: 2026-09-13. Status values: planned | in_progress | completed | mea
 
 ## OneBusAway / Maglev (external, public)
 
-Verified via GitHub Search API on 2026-09-13: **12** merged PRs authored by `tejasva-vardhan` in `org:OneBusAway` (all on `maglev`). Examples: `#457` (data race / RLock), `#653`/`#702` (transactions), `#669`/`#459` (N+1 queries), `#507` (panic recovery), `#512`/`#519` (benchmarks / large GTFS). Independent human issue comments confirmed only for `#507` and `#702` in the comment APIs we called.
+Verified via GitHub Search API on 2026-09-13: **12** merged PRs authored by `tejasva-vardhan` in `org:OneBusAway` (all on `maglev`). Examples: `#457` (data race / RLock), `#653`/`#702` (transactions), `#669`/`#459` (N+1 queries), `#507` (panic recovery), `#512`/`#519` (benchmarks / large GTFS). Phase 4 review-endpoint checks confirmed independent humans on `#507`, `#702`, and `#457`. Author comments remain excluded from gold.
 
 ## SIH26166, ContentDesk, AI Neta, CGPA, Codeforces
 

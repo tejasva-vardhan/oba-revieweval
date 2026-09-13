@@ -19,6 +19,7 @@ Thumbs.db
 .vscode/
 results/raw/
 results/api_cache/
+data/raw/cache/
 report/*.aux
 report/*.log
 report/*.out

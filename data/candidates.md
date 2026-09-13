@@ -47,3 +47,17 @@ Stratum counts in this list: api_gtfs 16 (incl. 507), concurrency 2, database 5 
 **Known imbalance:** concurrency is thin because few high-comment Maglev PRs in the search page were race/lock PRs, and the author's `#457` (data race + RLock) has **no independent human comments** in the APIs we called. Phase 4 should search review threads or additional PRs (`race`, `lock`, `mutex`, `concurrent`) rather than force `#457` into gold.
 
 Machine-readable copy of the discovery dump: `data/candidates_raw.json` (search hits, not the final 30).
+
+## Phase 4 (2026-09-14)
+
+The table above is the **frozen discovery list**. It was not rewritten.
+
+Verification: `data/candidates/pr_verification.csv`. Collection notes: `docs/data_collection.md`.
+
+- Original candidates checked: 30
+- Eligible for primary gold: 26
+- Excluded: `#1374`, `#1365`, `#1284`, `#1378`
+- Additional accepts (not inserted into this table): `#457`, `#354`, `#372`, `#541`, `#756`, `#691`, `#271`
+- Recommended corpus: **n = 33** (`data/candidates/recommended_corpus.csv`)
+
+`#457` does have independent human **review bodies**. The 2026-09-13 issue-comment-only check missed them. That is a collection-method correction, not a protocol change.
