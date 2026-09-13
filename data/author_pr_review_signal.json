@@ -1,0 +1,82 @@
+[
+  {
+    "number": 443,
+    "issue_humans": [
+      "CLAassistant",
+      "tejasva-vardhan"
+    ],
+    "inline_humans": []
+  },
+  {
+    "number": 457,
+    "issue_humans": [
+      "tejasva-vardhan"
+    ],
+    "inline_humans": []
+  },
+  {
+    "number": 459,
+    "issue_humans": [],
+    "inline_humans": []
+  },
+  {
+    "number": 478,
+    "issue_humans": [],
+    "inline_humans": []
+  },
+  {
+    "number": 507,
+    "issue_humans": [
+      "ARCoder181105",
+      "tejasva-vardhan"
+    ],
+    "inline_humans": []
+  },
+  {
+    "number": 512,
+    "issue_humans": [
+      "tejasva-vardhan"
+    ],
+    "inline_humans": []
+  },
+  {
+    "number": 519,
+    "issue_humans": [
+      "tejasva-vardhan"
+    ],
+    "inline_humans": []
+  },
+  {
+    "number": 653,
+    "issue_humans": [],
+    "inline_humans": []
+  },
+  {
+    "number": 667,
+    "issue_humans": [
+      "tejasva-vardhan"
+    ],
+    "inline_humans": []
+  },
+  {
+    "number": 669,
+    "issue_humans": [],
+    "inline_humans": []
+  },
+  {
+    "number": 702,
+    "issue_humans": [
+      "aaronbrethorst",
+      "tejasva-vardhan"
+    ],
+    "inline_humans": []
+  },
+  {
+    "number": 1346,
+    "issue_humans": [
+      "ARCoder181105",
+      "aaronbrethorst"
+    ],
+    "inline_humans": []
+  }
+]

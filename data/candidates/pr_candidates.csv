@@ -1,0 +1,31 @@
+pr_id,repo,html_url,title,author,stratum,author_is_tejasva,candidate_reason,exclusion_risk
+1277,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1277,Spec interaction includeTrip / includeStatus,other,api_gtfs,no,High-comment API/GTFS change,need_human_vs_bot_audit
+1317,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1317,Scheduled trips without real-time vehicle,other,api_gtfs,no,Realtime vs schedule contract,need_human_vs_bot_audit
+1316,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1316,Service date of a trip instance,other,api_gtfs,no,Service-date semantics,need_human_vs_bot_audit
+1352,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1352,Time formats in stops-for-location,other,api_gtfs,no,Documented API time formats,need_human_vs_bot_audit
+1404,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1404,readableTime timezone,other,api_gtfs,no,Timezone/API contract,need_human_vs_bot_audit
+1313,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1313,Situation references on every endpoint,other,api_gtfs,no,API reference semantics,need_human_vs_bot_audit
+1380,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1380,Agency stop fetch polluted by other agencies,other,api_gtfs,no,Agency-scoped query correctness,need_human_vs_bot_audit
+1286,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1286,serviceDate after midnight,other,api_gtfs,no,Service-date boundary,need_human_vs_bot_audit
+1281,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1281,trip-for-vehicle includeReferences,other,api_gtfs,no,API flag contract,need_human_vs_bot_audit
+1385,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1385,Validate schedule-for-stop date,other,api_gtfs,no,Handler validation order,need_human_vs_bot_audit
+1375,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1375,Parent route agency references,other,api_gtfs,no,Reference graph correctness,need_human_vs_bot_audit
+1315,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1315,Schedule timezone / outOfRange,other,api_gtfs,no,Bounds and timezone,need_human_vs_bot_audit
+1348,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1348,GTFS frequencies API integration,other,api_gtfs,no,Feature-sized GTFS API work,thin_or_bot_discussion
+1386,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1386,Headway-based frequencies in schedule-for-stop,other,api_gtfs,no,GTFS frequencies semantics,thin_or_bot_discussion
+1329,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1329,Multi-timezone trip service dates,other,api_gtfs,no,GTFS timezone correctness,need_human_vs_bot_audit
+1374,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1374,Stop caching real-time responses as static,other,concurrency,no,Cache/correctness,need_human_vs_bot_audit
+1428,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1428,Reset distanceAlongBlock between configurations,other,concurrency,no,Behavioral reset across configs,need_human_vs_bot_audit
+1372,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1372,Precompute stop agency at import,other,database,no,Import-time data model,need_human_vs_bot_audit
+1378,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1378,Swallowed duplicated trip lookup errors,other,database,no,Error-handling defect,need_human_vs_bot_audit
+1288,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1288,Track referenced trips in buildTripReferences,other,database,no,Reference-set bookkeeping,need_human_vs_bot_audit
+1347,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1347,Reuse resolved situations for arrivals,other,database,no,Lookup reuse,need_human_vs_bot_audit
+702,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/702,Transaction helper for GTFS bulk imports,tejasva-vardhan,database,yes,Independent commenter aaronbrethorst,self_author_ok_if_other_human
+1298,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1298,E2E coverage for DUPLICATED real-time trips,other,test_refactor,no,Realtime duplication tests,need_human_vs_bot_audit
+1300,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1300,E2E coverage for status sub-object,other,test_refactor,no,Status field tests,need_human_vs_bot_audit
+1407,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1407,Extract per-stop arrivals into shared functions,other,test_refactor,no,Handler factorization,may_be_refactor_only
+1359,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1359,routes-for-location spec test gaps,other,test_refactor,no,Spec tests,need_human_vs_bot_audit
+1365,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1365,trips-for-location cap regression test,other,test_refactor,no,Cap regression test,need_human_vs_bot_audit
+1296,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1296,Clock into ParseTimeParameter plus time-edge tests,other,test_refactor,no,Time parsing plus tests,need_human_vs_bot_audit
+1284,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/1284,search-route tests and spec verification,other,test_refactor,no,Spec verification tests,need_human_vs_bot_audit
+507,OneBusAway/maglev,https://github.com/OneBusAway/maglev/pull/507,Panic recovery middleware,tejasva-vardhan,api_gtfs,yes,Independent commenter ARCoder181105,self_author_ok_if_other_human
