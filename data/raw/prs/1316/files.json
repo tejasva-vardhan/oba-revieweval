@@ -1,0 +1,42 @@
+[
+  {
+    "filename": "internal/restapi/service_date_resolver_test.go",
+    "status": "added",
+    "additions": 127,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_for_location_handler.go",
+    "status": "modified",
+    "additions": 32,
+    "deletions": 15,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_for_route_handler.go",
+    "status": "modified",
+    "additions": 52,
+    "deletions": 27,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_for_route_handler_test.go",
+    "status": "modified",
+    "additions": 69,
+    "deletions": 1,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_helper.go",
+    "status": "modified",
+    "additions": 110,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  }
+]

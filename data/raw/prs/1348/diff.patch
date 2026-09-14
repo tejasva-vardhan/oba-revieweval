@@ -1,0 +1,2377 @@
+diff --git a/internal/models/frequency.go b/internal/models/frequency.go
+index c35bc006..879382f7 100644
+--- a/internal/models/frequency.go
++++ b/internal/models/frequency.go
+@@ -50,3 +50,31 @@ func NewFrequencyFromDB(dbFreq gtfsdb.Frequency, serviceDate time.Time) Frequenc
+ 		ExactTimes: int(dbFreq.ExactTimes),
+ 	}
+ }
++
++// NewScheduleFrequencyFromDB converts a database Frequency row into a
++// ScheduleFrequency for use in schedule-for-stop responses.
++// serviceDate is the start-of-day in the agency's local timezone.
++// serviceID and tripID must already be combined (agencyID_rawID) form.
++func NewScheduleFrequencyFromDB(
++	dbFreq gtfsdb.Frequency,
++	serviceDate time.Time,
++	serviceID, tripID, stopHeadsign string,
++	arrivalEnabled, departureEnabled bool,
++) ScheduleFrequency {
++	startOfDay := time.Date(serviceDate.Year(), serviceDate.Month(), serviceDate.Day(),
++		0, 0, 0, 0, serviceDate.Location())
++
++	return ScheduleFrequency{
++		FrequencyWindow: FrequencyWindow{
++			StartTime: NewModelTime(startOfDay.Add(time.Duration(dbFreq.StartTime))),
++			EndTime:   NewModelTime(startOfDay.Add(time.Duration(dbFreq.EndTime))),
++			Headway:   NewModelDuration(time.Duration(dbFreq.HeadwaySecs) * time.Second),
++		},
++		ServiceDate:      NewModelTime(startOfDay),
++		ServiceID:        serviceID,
++		TripID:           tripID,
++		StopHeadsign:     stopHeadsign,
++		ArrivalEnabled:   arrivalEnabled,
++		DepartureEnabled: departureEnabled,
++	}
++}
+diff --git a/internal/models/frequency_test.go b/internal/models/frequency_test.go
+index 5570954d..2e29d0ec 100644
+--- a/internal/models/frequency_test.go
++++ b/internal/models/frequency_test.go
+@@ -134,6 +134,68 @@ func TestFrequencyJSON_NilPointer(t *testing.T) {
+ 	assert.Contains(t, string(jsonData), `"frequency":null`)
+ }
+ 
++func TestNewScheduleFrequencyFromDB(t *testing.T) {
++	// Use a non-UTC timezone to verify start-of-day is computed in the
++	// agency's local timezone.
++	loc, err := time.LoadLocation("America/New_York")
++	require.NoError(t, err)
++
++	serviceDate := time.Date(2024, 1, 15, 0, 0, 0, 0, loc)
++
++	dbFreq := gtfsdb.Frequency{
++		TripID:      "trip_1",
++		StartTime:   int64(6 * time.Hour),
++		EndTime:     int64(9 * time.Hour),
++		HeadwaySecs: 600, // 10 minutes
++		ExactTimes:  1,
++	}
++
++	sf := NewScheduleFrequencyFromDB(
++		dbFreq,
++		serviceDate,
++		"service_1",         // serviceID
++		"15_trip_1",         // tripID (combined form)
++		"Downtown Terminal", // stopHeadsign
++		true,                // arrivalEnabled
++		false,               // departureEnabled
++	)
++
++	expectedStart := time.Date(2024, 1, 15, 6, 0, 0, 0, loc)
++	expectedEnd := time.Date(2024, 1, 15, 9, 0, 0, 0, loc)
++
++	assert.Equal(t, expectedStart, sf.StartTime.Time)
++	assert.Equal(t, expectedEnd, sf.EndTime.Time)
++	assert.Equal(t, 600*time.Second, sf.Headway.Duration)
++	assert.Equal(t, serviceDate, sf.ServiceDate.Time)
++	assert.Equal(t, "service_1", sf.ServiceID)
++	assert.Equal(t, "15_trip_1", sf.TripID)
++	assert.Equal(t, "Downtown Terminal", sf.StopHeadsign)
++	assert.True(t, sf.ArrivalEnabled)
++	assert.False(t, sf.DepartureEnabled)
++}
++
++func TestNewScheduleFrequencyFromDB_OverMidnight(t *testing.T) {
++	serviceDate := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
++
++	dbFreq := gtfsdb.Frequency{
++		TripID:      "trip_late",
++		StartTime:   int64(25 * time.Hour),
++		EndTime:     int64(27 * time.Hour),
++		HeadwaySecs: 1800,
++		ExactTimes:  0,
++	}
++
++	sf := NewScheduleFrequencyFromDB(dbFreq, serviceDate, "service_1", "15_trip_late", "Uptown", true, true)
++
++	// Should resolve to Jan 16 at 1:00 AM and 3:00 AM
++	expectedStart := time.Date(2024, 1, 16, 1, 0, 0, 0, time.UTC)
++	expectedEnd := time.Date(2024, 1, 16, 3, 0, 0, 0, time.UTC)
++
++	assert.Equal(t, expectedStart, sf.StartTime.Time)
++	assert.Equal(t, expectedEnd, sf.EndTime.Time)
++	assert.Equal(t, serviceDate, sf.ServiceDate.Time)
++}
++
+ func TestScheduleFrequencyJSON(t *testing.T) {
+ 	sf := ScheduleFrequency{
+ 		FrequencyWindow: FrequencyWindow{
+diff --git a/internal/restapi/arrival_and_departure_for_stop_handler.go b/internal/restapi/arrival_and_departure_for_stop_handler.go
+index 87e0a53e..638f023c 100644
+--- a/internal/restapi/arrival_and_departure_for_stop_handler.go
++++ b/internal/restapi/arrival_and_departure_for_stop_handler.go
+@@ -353,11 +353,19 @@ func (api *RestAPI) arrivalAndDepartureForStopHandler(w http.ResponseWriter, r *
+ 		predicted = true
+ 	}
+ 
++	// Fetch the trip's frequency rows once and share them with BuildTripStatus.
++	freqRows, freqErr := api.GtfsManager.GtfsDB.Queries.GetFrequenciesForTrip(ctx, tripID)
++	if freqErr != nil {
++		api.serverErrorResponse(w, r, freqErr)
++		return
++	}
++	freqMap := map[string][]gtfsdb.Frequency{tripID: freqRows}
++
+ 	// Use serviceMidnight (not the raw user-supplied serviceDate, which may
+ 	// carry a wall-clock time portion) for all schedule math â€” matches Java's
+ 	// BlockInstance contract ("midnight time relative to stop times"; see
+ 	// BlockInstance.java:69-72) and the plural handler's convention.
+-	status, statusExtras, statusErr := api.BuildTripStatus(ctx, route.AgencyID, tripID, nil, serviceMidnight, currentTime)
++	status, statusExtras, statusErr := api.BuildTripStatus(ctx, route.AgencyID, tripID, nil, serviceMidnight, currentTime, freqMap)
+ 	if statusErr != nil {
+ 		api.Logger.Warn("BuildTripStatus failed",
+ 			"tripID", tripID, "error", statusErr)
+@@ -430,6 +438,12 @@ func (api *RestAPI) arrivalAndDepartureForStopHandler(w http.ResponseWriter, r *
+ 		situationIDs,                                   // situationIds
+ 	)
+ 
++	// The arrival's frequency uses the window-matched row fetched above.
++	if len(freqRows) > 0 {
++		converted := models.NewFrequencyFromDB(*selectFrequency(freqRows, serviceMidnight, currentTime), serviceMidnight)
++		arrival.Frequency = &converted
++	}
++
+ 	references := models.NewEmptyReferences()
+ 
+ 	// Add Stop Agency Reference
+diff --git a/internal/restapi/arrival_and_departure_for_stop_handler_test.go b/internal/restapi/arrival_and_departure_for_stop_handler_test.go
+index 071a1021..9631c417 100644
+--- a/internal/restapi/arrival_and_departure_for_stop_handler_test.go
++++ b/internal/restapi/arrival_and_departure_for_stop_handler_test.go
+@@ -69,6 +69,73 @@ func TestArrivalAndDepartureForStopHandlerEndToEnd(t *testing.T) {
+ 	assert.NotEmpty(t, model.Data.References.Trips)
+ }
+ 
++// TestArrivalAndDepartureWithFrequency verifies the ArrivalAndDeparture entry
++// carries frequency data when the requested trip is frequency-based, covering
++// both exact_times=0 (headway-based) and exact_times=1 (schedule-based)
++// windows, and that non-frequency trips keep the field absent.
++func TestArrivalAndDepartureWithFrequency(t *testing.T) {
++	api := createTestApiWithFrequencyData(t)
++
++	serviceDate := time.Date(2025, 6, 12, 12, 0, 0, 0, time.UTC)
++
++	tests := []struct {
++		name              string
++		tripID            string
++		wantExactTimes    int
++		wantHeadway       time.Duration
++		wantFrequencyData bool
++	}{
++		{
++			name:              "headway-based trip (exact_times=0)",
++			tripID:            freqTripID,
++			wantExactTimes:    0,
++			wantHeadway:       600 * time.Second,
++			wantFrequencyData: true,
++		},
++		{
++			name:              "schedule-based trip (exact_times=1)",
++			tripID:            freqExactTripID,
++			wantExactTimes:    1,
++			wantHeadway:       1800 * time.Second,
++			wantFrequencyData: true,
++		},
++		{
++			name:              "non-frequency trip",
++			tripID:            freqNormalTripD,
++			wantFrequencyData: false,
++		},
++	}
++
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			stopID := utils.FormCombinedID(freqAgencyID, freqStopAID)
++			tripID := utils.FormCombinedID(freqAgencyID, tt.tripID)
++
++			endpoint := fmt.Sprintf("/api/where/arrival-and-departure-for-stop/%s.json?key=TEST&tripId=%s&serviceDate=%d",
++				stopID, tripID, serviceDate.UnixMilli())
++			resp, model := callAPIHandler[ArrivalAndDepartureResponse](t, api, endpoint)
++
++			require.Equal(t, http.StatusOK, resp.StatusCode)
++			require.Equal(t, http.StatusOK, model.Code)
++
++			entry := model.Data.Entry
++			if !tt.wantFrequencyData {
++				assert.Nil(t, entry.Frequency, "non-frequency trips must not carry frequency data")
++				return
++			}
++
++			require.NotNil(t, entry.Frequency, "frequency should be populated for a frequency-based trip")
++			assert.Equal(t, tt.wantExactTimes, entry.Frequency.ExactTimes)
++			assert.Equal(t, tt.wantHeadway, entry.Frequency.Headway.Duration)
++			// UTC agency â†’ serviceMidnight is 2025-06-12; the fixture windows
++			// span 06:00â€“09:00 UTC. Compare instants (millis): ModelTime
++			// round-trips through JSON in time.Local.
++			assert.Equal(t, time.Date(2025, 6, 12, 6, 0, 0, 0, time.UTC).UnixMilli(), entry.Frequency.StartTime.UnixMilli())
++			assert.Equal(t, time.Date(2025, 6, 12, 9, 0, 0, 0, time.UTC).UnixMilli(), entry.Frequency.EndTime.UnixMilli())
++		})
++	}
++}
++
+ func TestArrivalAndDepartureForStopHandlerWithNonexistentStopID(t *testing.T) {
+ 	api := createTestApi(t)
+ 	defer api.Shutdown()
+diff --git a/internal/restapi/arrivals_and_departures_for_stop_handler.go b/internal/restapi/arrivals_and_departures_for_stop_handler.go
+index 4eee65c1..c8249e13 100644
+--- a/internal/restapi/arrivals_and_departures_for_stop_handler.go
++++ b/internal/restapi/arrivals_and_departures_for_stop_handler.go
+@@ -287,6 +287,18 @@ func (api *RestAPI) arrivalsAndDeparturesForStopHandler(w http.ResponseWriter, r
+ 		}
+ 	}
+ 
++	// Batch-fetch frequencies; success seeds nil to skip fallback queries. The
++	// arrival's frequency uses the row whose window contains the request time.
++	freqMap := make(map[string][]gtfsdb.Frequency)
++	if len(uniqueTripIDs) > 0 {
++		var freqErr error
++		freqMap, freqErr = api.fetchFrequenciesForTrips(ctx, uniqueTripIDs)
++		if freqErr != nil {
++			api.serverErrorResponse(w, r, freqErr)
++			return
++		}
++	}
++
+ 	for _, ast := range allActiveStopTimes {
+ 		st := ast.GetStopTimesForStopInWindowRow
+ 
+@@ -364,8 +376,9 @@ func (api *RestAPI) arrivalsAndDeparturesForStopHandler(w http.ResponseWriter, r
+ 		}
+ 
+ 		// Always built â€” Java attaches a BlockLocation (real-time or scheduled) to
+-		// every arrival, so tripStatus is always non-null.
+-		status, statusExtras, statusErr := api.BuildTripStatus(ctx, route.AgencyID, st.TripID, nil, serviceMidnight, params.Time)
++		// every arrival, so tripStatus is always non-null. Pass freqMap to avoid
++		// per-arrival frequency queries.
++		status, statusExtras, statusErr := api.BuildTripStatus(ctx, route.AgencyID, st.TripID, nil, serviceMidnight, params.Time, freqMap)
+ 		if statusErr != nil {
+ 			api.Logger.Warn("BuildTripStatus failed for arrival",
+ 				"tripID", st.TripID, "error", statusErr)
+@@ -481,6 +494,11 @@ func (api *RestAPI) arrivalsAndDeparturesForStopHandler(w http.ResponseWriter, r
+ 			situationIDs,                                    // situationIDs
+ 		)
+ 
++		if freqs, ok := freqMap[st.TripID]; ok && len(freqs) > 0 {
++			converted := models.NewFrequencyFromDB(*selectFrequency(freqs, serviceMidnight, params.Time), serviceMidnight)
++			arrival.Frequency = &converted
++		}
++
+ 		arrivals = append(arrivals, *arrival)
+ 	}
+ 
+diff --git a/internal/restapi/arrivals_and_departures_for_stop_handler_test.go b/internal/restapi/arrivals_and_departures_for_stop_handler_test.go
+index a1a0d795..434022d8 100644
+--- a/internal/restapi/arrivals_and_departures_for_stop_handler_test.go
++++ b/internal/restapi/arrivals_and_departures_for_stop_handler_test.go
+@@ -175,6 +175,82 @@ func TestArrivalsAndDeparturesForStopHandlerTimeParams(t *testing.T) {
+ 	}
+ }
+ 
++// TestArrivalsAndDeparturesWithFrequency verifies the batch-fetched frequency
++// data lands on each ArrivalAndDeparture row in the plural handler:
++// frequency-based trips (both exact_times variants) carry their window, and
++// non-frequency trips keep the field null.
++func TestArrivalsAndDeparturesWithFrequency(t *testing.T) {
++	api := createTestApiWithFrequencyData(t)
++	defer api.Shutdown()
++
++	combinedStopID := utils.FormCombinedID(freqAgencyID, freqStopAID)
++	// The fixture serves stop A with freq-trip (06:00) and freq-exact-trip
++	// (06:00) from their 06:00-09:00 windows, and freq-normal-trip at 08:00.
++	// Querying at 06:05 (default window 06:00-06:40) surfaces only the two
++	// frequency-based arrivals; querying at 08:05 surfaces only the normal one.
++	windowRequests := []struct {
++		name        string
++		timeMs      int64
++		wantTripIDs []string
++		wantFreq    bool
++	}{
++		{
++			name:        "frequency-based arrivals carry their window",
++			timeMs:      time.Date(2025, 6, 12, 6, 5, 0, 0, time.UTC).UnixMilli(),
++			wantTripIDs: []string{freqTripID, freqExactTripID},
++			wantFreq:    true,
++		},
++		{
++			name:        "non-frequency arrival keeps frequency null",
++			timeMs:      time.Date(2025, 6, 12, 8, 5, 0, 0, time.UTC).UnixMilli(),
++			wantTripIDs: []string{freqNormalTripD},
++			wantFreq:    false,
++		},
++	}
++
++	for _, tc := range windowRequests {
++		t.Run(tc.name, func(t *testing.T) {
++			endpoint := arrivalsAndDeparturesURL(combinedStopID, url.Values{
++				"time": {fmt.Sprintf("%d", tc.timeMs)},
++			})
++			resp, model := callAPIHandler[ArrivalsAndDeparturesResponse](t, api, endpoint)
++
++			require.Equal(t, http.StatusOK, resp.StatusCode)
++			require.Equal(t, http.StatusOK, model.Code)
++
++			arrivals := model.Data.Entry.ArrivalsAndDepartures
++			require.Len(t, arrivals, len(tc.wantTripIDs), "window should surface exactly the expected arrivals")
++
++			for _, a := range arrivals {
++				_, aTripID, err := utils.ExtractAgencyIDAndCodeID(a.TripID)
++				require.NoError(t, err)
++				assert.Contains(t, tc.wantTripIDs, aTripID)
++
++				if !tc.wantFreq {
++					assert.Nil(t, a.Frequency, "non-frequency trip %q must not carry frequency data", aTripID)
++					continue
++				}
++
++				require.NotNil(t, a.Frequency, "frequency-based trip %q must carry frequency data", aTripID)
++				// Fixture windows span 06:00-09:00 UTC on the 2025-06-12
++				// service date. Compare instants (millis): ModelTime round-trips
++				// through JSON in time.Local.
++				assert.Equal(t, time.Date(2025, 6, 12, 6, 0, 0, 0, time.UTC).UnixMilli(), a.Frequency.StartTime.UnixMilli())
++				assert.Equal(t, time.Date(2025, 6, 12, 9, 0, 0, 0, time.UTC).UnixMilli(), a.Frequency.EndTime.UnixMilli())
++
++				switch aTripID {
++				case freqTripID:
++					assert.Equal(t, 0, a.Frequency.ExactTimes)
++					assert.Equal(t, 600*time.Second, a.Frequency.Headway.Duration)
++				case freqExactTripID:
++					assert.Equal(t, 1, a.Frequency.ExactTimes)
++					assert.Equal(t, 1800*time.Second, a.Frequency.Headway.Duration)
++				}
++			}
++		})
++	}
++}
++
+ func TestArrivalsAndDeparturesForStopHandlerWithInvalidStopID(t *testing.T) {
+ 	api, cleanup := createTestApiWithRealTimeData(t, clock.RealClock{})
+ 	defer cleanup()
+diff --git a/internal/restapi/frequency_fixture_test.go b/internal/restapi/frequency_fixture_test.go
+new file mode 100644
+index 00000000..c465924e
+--- /dev/null
++++ b/internal/restapi/frequency_fixture_test.go
+@@ -0,0 +1,69 @@
++package restapi
++
++import (
++	"testing"
++	"time"
++
++	"maglev.onebusaway.org/internal/clock"
++)
++
++// Frequency fixture identifiers shared by the handler tests that exercise
++// GTFS frequencies integration (trip-for-vehicle, arrival-and-departure,
++// trips-for-route, trips-for-location, schedule-for-stop).
++const (
++	freqAgencyID    = "freq-agency"
++	freqRouteID     = "freq-route"
++	freqServiceID   = "freq-service"
++	freqTripID      = "freq-trip"        // frequency-based, exact_times=0
++	freqExactTripID = "freq-exact-trip"  // frequency-based, exact_times=1
++	freqNormalTripD = "freq-normal-trip" // no frequency entry
++	freqStopAID     = "freq-stop-a"
++	freqStopBID     = "freq-stop-b"
++)
++
++// frequencyFixtureClock pins the handler clock to 08:00 UTC on Thursday
++// 2025-06-12 â€” inside both frequency windows (06:00â€“09:00) and inside the
++// calendar's active range, so trip-for-vehicle's default serviceDate resolves
++// to a service day the fixture serves.
++var frequencyFixtureClock = time.Date(2025, 6, 12, 8, 0, 0, 0, time.UTC)
++
++// createTestApiWithFrequencyData builds a RestAPI backed by an in-memory GTFS
++// dataset containing a headway-based frequency trip (exact_times=0), an
++// exact-times frequency trip (exact_times=1), and a plain scheduled trip with
++// no frequency entry. Agency timezone is UTC to keep service-date arithmetic
++// trivial in assertions.
++func createTestApiWithFrequencyData(t *testing.T) *RestAPI {
++	t.Helper()
++	return createTestApiWithGTFSFixture(t, clock.NewMockClock(frequencyFixtureClock), "frequency-fixture.zip", frequencyFixtureFiles())
++}
++
++func frequencyFixtureFiles() map[string]string {
++	return map[string]string{
++		"agency.txt": "agency_id,agency_name,agency_url,agency_timezone\n" +
++			freqAgencyID + ",Frequency Agency,http://example.com,UTC\n",
++		"routes.txt": "route_id,agency_id,route_short_name,route_long_name,route_type\n" +
++			freqRouteID + "," + freqAgencyID + ",FR,Frequency Route,3\n",
++		"calendar.txt": "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n" +
++			freqServiceID + ",1,1,1,1,1,1,1,20240101,20991231\n",
++		"stops.txt": "stop_id,stop_name,stop_lat,stop_lon\n" +
++			freqStopAID + ",Frequency Stop A,37.7749,-122.4194\n" +
++			freqStopBID + ",Frequency Stop B,37.7849,-122.4094\n",
++		"trips.txt": "route_id,service_id,trip_id,trip_headsign,direction_id,block_id\n" +
++			freqRouteID + "," + freqServiceID + "," + freqTripID + ",Downtown via Freq,0,freq-block-1\n" +
++			freqRouteID + "," + freqServiceID + "," + freqExactTripID + ",Exact Times Trip,0,freq-block-2\n" +
++			freqRouteID + "," + freqServiceID + "," + freqNormalTripD + ",Normal Trip,0,freq-block-3\n",
++		"stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n" +
++			freqTripID + ",06:00:00,06:00:00," + freqStopAID + ",1\n" +
++			freqTripID + ",06:10:00,06:10:00," + freqStopBID + ",2\n" +
++			freqExactTripID + ",06:00:00,06:00:00," + freqStopAID + ",1\n" +
++			freqExactTripID + ",06:15:00,06:15:00," + freqStopBID + ",2\n" +
++			freqNormalTripD + ",08:00:00,08:00:00," + freqStopAID + ",1\n" +
++			freqNormalTripD + ",08:15:00,08:15:00," + freqStopBID + ",2\n",
++		// freq-trip:  06:00â€“09:00 headway-based window, 10-minute headway.
++		// freq-exact-trip: 06:00â€“09:00 schedule-based window, 30-minute headway.
++		// freq-normal-trip: no frequency entry.
++		"frequencies.txt": "trip_id,start_time,end_time,headway_secs,exact_times\n" +
++			freqTripID + ",06:00:00,09:00:00,600,0\n" +
++			freqExactTripID + ",06:00:00,09:00:00,1800,1\n",
++	}
++}
+diff --git a/internal/restapi/schedule_for_stop_handler.go b/internal/restapi/schedule_for_stop_handler.go
+index 8b33e2d7..0c7b6ccf 100644
+--- a/internal/restapi/schedule_for_stop_handler.go
++++ b/internal/restapi/schedule_for_stop_handler.go
+@@ -4,6 +4,7 @@ import (
+ 	"cmp"
+ 	"context"
+ 	"database/sql"
++	"log/slog"
+ 	"net/http"
+ 	"slices"
+ 	"strconv"
+@@ -148,13 +149,34 @@ func (api *RestAPI) scheduleForStopHandler(w http.ResponseWriter, r *http.Reques
+ 		}
+ 	}
+ 
++	// Batch-fetch frequencies for trips in this schedule (avoid N+1).
++	freqMap := make(map[string][]gtfsdb.Frequency)
++	if len(scheduleRows) > 0 {
++		tripIDSet := make(map[string]bool, len(scheduleRows))
++		for _, row := range scheduleRows {
++			tripIDSet[row.TripID] = true
++		}
++		tripIDs := make([]string, 0, len(tripIDSet))
++		for tripID := range tripIDSet {
++			tripIDs = append(tripIDs, tripID)
++		}
++		var freqErr error
++		freqMap, freqErr = api.fetchFrequenciesForTrips(ctx, tripIDs)
++		if freqErr != nil {
++			api.serverErrorResponse(w, r, freqErr)
++			return
++		}
++	}
++
+ 	// Group schedule data by route -> direction -> slice of stop times, and track
+ 	// per-direction headsign vote counts, per spec steps 6-7.
+-	routeDirectionScheduleMap, routeDirectionHeadsignCounts, err := groupScheduleRowsByRouteAndDirection(
++	routeDirectionScheduleMap, routeDirectionFrequencyMap, routeDirectionHeadsignCounts, err := groupScheduleRowsByRouteAndDirection(
+ 		ctx, scheduleRows, scheduleRowContext{
+ 			agencyID:                   agencyID,
+ 			startOfDay:                 startOfDay,
+ 			activeServiceBlockTripsMap: activeServiceBlockTripsMap,
++			freqMap:                    freqMap,
++			logger:                     api.Logger,
+ 		},
+ 	)
+ 	if err != nil {
+@@ -167,32 +189,37 @@ func (api *RestAPI) scheduleForStopHandler(w http.ResponseWriter, r *http.Reques
+ 	var routeSchedules []models.StopRouteSchedule
+ 	for _, rt := range routesForStop {
+ 		combinedRouteID := utils.FormCombinedID(agencyID, rt.ID)
+-		directionMap, hasSchedule := routeDirectionScheduleMap[combinedRouteID]
+-		if !hasSchedule {
++		directionMap, hasStopTimes := routeDirectionScheduleMap[combinedRouteID]
++		frequencyMap, hasFrequencies := routeDirectionFrequencyMap[combinedRouteID]
++		if !hasStopTimes && !hasFrequencies {
+ 			continue
+ 		}
+ 
++		// Iterate the union of direction IDs: frequency-only directions still need a group.
++		dirIDs := make(map[string]bool, len(directionMap)+len(frequencyMap))
++		for dirID := range directionMap {
++			dirIDs[dirID] = true
++		}
++		for dirID := range frequencyMap {
++			dirIDs[dirID] = true
++		}
++
+ 		var directionSchedules []models.StopRouteDirectionSchedule
+ 
+-		for dirID, stopTimes := range directionMap {
+-			tripHeadsign := ""
+-			maxCount := 0
+-			if dirHeadsigns, exists := routeDirectionHeadsignCounts[combinedRouteID][dirID]; exists {
+-				headsigns := make([]string, 0, len(dirHeadsigns))
+-				for headsign := range dirHeadsigns {
+-					headsigns = append(headsigns, headsign)
+-				}
+-				slices.Sort(headsigns)
+-				for _, headsign := range headsigns {
+-					count := dirHeadsigns[headsign]
+-					if count > maxCount {
+-						maxCount = count
+-						tripHeadsign = headsign
+-					}
+-				}
+-			}
++		for dirID := range dirIDs {
++			tripHeadsign := pluralityHeadsign(routeDirectionHeadsignCounts, combinedRouteID, dirID)
++
++			frequencies := frequencyMap[dirID]
++			// Java OBA orders scheduleFrequencies by start time (FrequencyBeanComparator).
++			slices.SortStableFunc(frequencies, func(a, b models.ScheduleFrequency) int {
++				return cmp.Compare(a.StartTime.UnixMilli(), b.StartTime.UnixMilli())
++			})
+ 
+-			directionSchedule := models.NewStopRouteDirectionSchedule(tripHeadsign, stopTimes, nil)
++			stopTimes := directionMap[dirID]
++			if stopTimes == nil {
++				stopTimes = []models.ScheduleStopTime{}
++			}
++			directionSchedule := models.NewStopRouteDirectionSchedule(tripHeadsign, stopTimes, frequencies)
+ 			directionSchedules = append(directionSchedules, directionSchedule)
+ 		}
+ 
+@@ -331,39 +358,98 @@ type scheduleRowContext struct {
+ 	// load-bearing: blockBoundaries's first/last-in-block comparisons are only correct
+ 	// against a map pre-filtered this way.
+ 	activeServiceBlockTripsMap map[string][]gtfsdb.GetTripsByBlockIDsRow
++	// freqMap maps trip ID to its frequency rows: exact_times=0 trips emit
++	// scheduleFrequencies; exact_times=1 trips expand into stop times.
++	freqMap map[string][]gtfsdb.Frequency
++	// logger reports malformed GTFS data; nil in tests.
++	logger *slog.Logger
++}
++
++// routeDirection keys per-route, per-direction output buckets.
++type routeDirection struct {
++	combinedRouteID string
++	directionID     string
+ }
+ 
+-// groupScheduleRowsByRouteAndDirection partitions schedule rows first by route, then by
+-// GTFS direction_id (defaulting to "0" when absent), per spec steps 6-7. It returns the
+-// grouped stop times alongside per-direction headsign vote counts used to pick each
+-// direction group's representative tripHeadsign. Returns a non-nil error only if ctx is
+-// canceled mid-computation.
++// routeDirectionAccumulators holds the per-route, per-direction output buckets
++// built from schedule rows: stop times, frequencies, and headsign votes.
++type routeDirectionAccumulators struct {
++	stopTimes      map[string]map[string][]models.ScheduleStopTime
++	frequencies    map[string]map[string][]models.ScheduleFrequency
++	headsignCounts map[string]map[string]map[string]int
++}
++
++// groupScheduleRowsByRouteAndDirection partitions schedule rows by route, then direction
++// (defaulting to "0"), per spec steps 6-7. exact_times=0 trips go to the frequency map;
++// exact_times=1 trips expand into stop times.
++// Returns a non-nil error only if ctx is canceled.
+ func groupScheduleRowsByRouteAndDirection(
+ 	ctx context.Context,
+ 	scheduleRows []gtfsdb.GetScheduleForStopOnDateRow,
+ 	rowCtx scheduleRowContext,
+ ) (
+ 	routeDirectionScheduleMap map[string]map[string][]models.ScheduleStopTime,
++	routeDirectionFrequencyMap map[string]map[string][]models.ScheduleFrequency,
+ 	routeDirectionHeadsignCounts map[string]map[string]map[string]int,
+ 	err error,
+ ) {
+-	routeDirectionScheduleMap = make(map[string]map[string][]models.ScheduleStopTime)
+-	routeDirectionHeadsignCounts = make(map[string]map[string]map[string]int)
++	acc := &routeDirectionAccumulators{
++		stopTimes:      make(map[string]map[string][]models.ScheduleStopTime),
++		frequencies:    make(map[string]map[string][]models.ScheduleFrequency),
++		headsignCounts: make(map[string]map[string]map[string]int),
++	}
+ 
+ 	for _, row := range scheduleRows {
+ 		if ctx.Err() != nil {
+-			return nil, nil, ctx.Err()
++			return nil, nil, nil, ctx.Err()
+ 		}
+ 
+ 		directionID := directionIDForRow(row)
+-		combinedRouteID := utils.FormCombinedID(rowCtx.agencyID, row.RouteID)
+-		stopTime := buildScheduleStopTime(row, rowCtx)
++		dir := routeDirection{
++			combinedRouteID: utils.FormCombinedID(rowCtx.agencyID, row.RouteID),
++			directionID:     directionID,
++		}
++
++		freqs, isFrequencyTrip := rowCtx.freqMap[row.TripID]
++		if isFrequencyTrip && len(freqs) > 0 {
++			processFrequencyTrip(row, freqs, rowCtx, acc, dir)
++			continue
++		}
+ 
+-		addStopTimeToDirectionGroup(routeDirectionScheduleMap, combinedRouteID, directionID, stopTime)
+-		recordHeadsignVote(routeDirectionHeadsignCounts, combinedRouteID, directionID, row.TripHeadsign)
++		stopTime := buildScheduleStopTime(row, rowCtx)
++		addStopTimeToDirectionGroup(acc, dir, stopTime)
++		recordHeadsignVote(acc, dir, row.TripHeadsign, 1)
+ 	}
+ 
+-	return routeDirectionScheduleMap, routeDirectionHeadsignCounts, nil
++	return acc.stopTimes, acc.frequencies, acc.headsignCounts, nil
++}
++
++// processFrequencyTrip routes a frequency trip's rows: exact_times=0 rows
++// become schedule frequencies weighted by trips in the window, exact_times=1
++// rows expand into discrete stop times (Java OBA).
++func processFrequencyTrip(
++	row gtfsdb.GetScheduleForStopOnDateRow,
++	freqs []gtfsdb.Frequency,
++	rowCtx scheduleRowContext,
++	acc *routeDirectionAccumulators,
++	dir routeDirection,
++) {
++	for _, freq := range freqs {
++		if freq.ExactTimes != 0 {
++			expanded := expandExactTimesStopTimes(row, freq, rowCtx)
++			for _, st := range expanded {
++				addStopTimeToDirectionGroup(acc, dir, st)
++			}
++			if len(expanded) > 0 {
++				recordHeadsignVote(acc, dir, row.TripHeadsign, len(expanded))
++			}
++			continue
++		}
++		scheduleFreq := buildScheduleFrequency(row, freq, rowCtx)
++		addFrequencyToDirectionGroup(acc, dir, scheduleFreq)
++		// Weight frequency headsign votes by trips in the window (Java OBA).
++		recordHeadsignVote(acc, dir, row.TripHeadsign, frequencyVoteWeight(freq))
++	}
+ }
+ 
+ // directionIDForRow returns the row's GTFS direction_id as a string, defaulting to "0"
+@@ -375,27 +461,22 @@ func directionIDForRow(row gtfsdb.GetScheduleForStopOnDateRow) string {
+ 	return "0"
+ }
+ 
+-// buildScheduleStopTime converts a schedule row into a ScheduleStopTime, converting GTFS
+-// times (nanoseconds since midnight) to Unix millisecond timestamps and disabling the
+-// arrival/departure flags at the boundaries of the vehicle's block for the service day.
+-func buildScheduleStopTime(row gtfsdb.GetScheduleForStopOnDateRow, rowCtx scheduleRowContext) models.ScheduleStopTime {
+-	arrivalTimeMs := rowCtx.startOfDay.Add(time.Duration(row.ArrivalTime)).UnixMilli()
+-	departureTimeMs := rowCtx.startOfDay.Add(time.Duration(row.DepartureTime)).UnixMilli()
+-
++// newScheduleStopTime builds a ScheduleStopTime for the row, disabling the
++// arrival/departure flags at the boundaries of its vehicle's block.
++func newScheduleStopTime(row gtfsdb.GetScheduleForStopOnDateRow, rowCtx scheduleRowContext, arrivalMs, departureMs int64, isFirstInBlock, isLastInBlock bool) models.ScheduleStopTime {
+ 	stopTime := models.NewScheduleStopTime(
+-		arrivalTimeMs,
+-		departureTimeMs,
++		arrivalMs,
++		departureMs,
+ 		utils.FormCombinedID(rowCtx.agencyID, row.ServiceID),
+ 		row.StopHeadsign.String,
+ 		utils.FormCombinedID(rowCtx.agencyID, row.TripID),
+ 	)
+ 
+-	isFirstInBlock, isLastInBlock := blockBoundaries(row, rowCtx.activeServiceBlockTripsMap)
+-	// Disable arrivals for the first stop of a block (vehicle starts service here).
++	// Blocks start with an arrival.
+ 	if isFirstInBlock {
+ 		stopTime.ArrivalEnabled = false
+ 	}
+-	// Disable departures for the last stop of a block (vehicle ends service here).
++	// Blocks end with a departure.
+ 	if isLastInBlock {
+ 		stopTime.DepartureEnabled = false
+ 	}
+@@ -403,6 +484,16 @@ func buildScheduleStopTime(row gtfsdb.GetScheduleForStopOnDateRow, rowCtx schedu
+ 	return stopTime
+ }
+ 
++// buildScheduleStopTime converts a schedule row into a ScheduleStopTime, converting GTFS
++// times (nanoseconds since midnight) to Unix millisecond timestamps.
++func buildScheduleStopTime(row gtfsdb.GetScheduleForStopOnDateRow, rowCtx scheduleRowContext) models.ScheduleStopTime {
++	arrivalTimeMs := rowCtx.startOfDay.Add(time.Duration(row.ArrivalTime)).UnixMilli()
++	departureTimeMs := rowCtx.startOfDay.Add(time.Duration(row.DepartureTime)).UnixMilli()
++
++	isFirstInBlock, isLastInBlock := blockBoundaries(row, rowCtx.activeServiceBlockTripsMap)
++	return newScheduleStopTime(row, rowCtx, arrivalTimeMs, departureTimeMs, isFirstInBlock, isLastInBlock)
++}
++
+ // blockBoundaries reports whether this stop time is the first (or last) stop time in the
+ // vehicle's entire block for the service day, meaning there is no inbound arrival (or
+ // onward departure) to speak of. activeServiceBlockTripsMap must already be filtered to
+@@ -433,34 +524,139 @@ func blockBoundaries(
+ 
+ // addStopTimeToDirectionGroup appends stopTime to the route's direction bucket, creating
+ // the intermediate map when this is the route's first stop time seen so far.
+-func addStopTimeToDirectionGroup(
+-	routeDirectionScheduleMap map[string]map[string][]models.ScheduleStopTime,
+-	combinedRouteID, directionID string,
+-	stopTime models.ScheduleStopTime,
+-) {
+-	if routeDirectionScheduleMap[combinedRouteID] == nil {
+-		routeDirectionScheduleMap[combinedRouteID] = make(map[string][]models.ScheduleStopTime)
++func addStopTimeToDirectionGroup(acc *routeDirectionAccumulators, dir routeDirection, stopTime models.ScheduleStopTime) {
++	if acc.stopTimes[dir.combinedRouteID] == nil {
++		acc.stopTimes[dir.combinedRouteID] = make(map[string][]models.ScheduleStopTime)
+ 	}
+-	routeDirectionScheduleMap[combinedRouteID][directionID] = append(routeDirectionScheduleMap[combinedRouteID][directionID], stopTime)
++	acc.stopTimes[dir.combinedRouteID][dir.directionID] = append(acc.stopTimes[dir.combinedRouteID][dir.directionID], stopTime)
+ }
+ 
+-// recordHeadsignVote tallies one vote for headsign under the route's direction bucket, used
+-// later to pick each direction group's plurality tripHeadsign. Blank/absent headsigns cast
+-// no vote.
+-func recordHeadsignVote(
++// expandExactTimesStopTimes expands an exact_times=1 trip's template stop time
++// into one ScheduleStopTime per headway offset within its frequency window,
++// matching Java OBA. An invalid (non-positive) headway yields nil.
++func expandExactTimesStopTimes(row gtfsdb.GetScheduleForStopOnDateRow, freq gtfsdb.Frequency, rowCtx scheduleRowContext) []models.ScheduleStopTime {
++	headwayNs := int64(freq.HeadwaySecs) * int64(time.Second)
++	if headwayNs <= 0 {
++		if rowCtx.logger != nil {
++			rowCtx.logger.Warn("schedule-for-stop: skipping frequency trip with invalid headway",
++				"trip_id", row.TripID, "headway_secs", freq.HeadwaySecs)
++		}
++		return nil
++	}
++
++	// First stop time of the trip, falling back to this row's arrival.
++	var firstStopTime int64
++	if row.MinArrivalTime.Valid {
++		firstStopTime = row.MinArrivalTime.Int64
++	} else {
++		firstStopTime = row.ArrivalTime
++	}
++
++	arrivalOffset := row.ArrivalTime - firstStopTime
++	departureOffset := row.DepartureTime - firstStopTime
++
++	isFirstInBlock, isLastInBlock := blockBoundaries(row, rowCtx.activeServiceBlockTripsMap)
++
++	expanded := make([]models.ScheduleStopTime, 0)
++	const maxExpandedStopTimes = 1000
++	for offset := int64(0); freq.StartTime+offset < freq.EndTime; offset += headwayNs {
++		if len(expanded) >= maxExpandedStopTimes {
++			if rowCtx.logger != nil {
++				rowCtx.logger.Warn("schedule-for-stop: frequency expansion capped",
++					"trip_id", row.TripID, "limit", maxExpandedStopTimes)
++			}
++			break
++		}
++		arrivalMs := rowCtx.startOfDay.Add(time.Duration(freq.StartTime + offset + arrivalOffset)).UnixMilli()
++		departureMs := rowCtx.startOfDay.Add(time.Duration(freq.StartTime + offset + departureOffset)).UnixMilli()
++
++		stopTime := newScheduleStopTime(row, rowCtx, arrivalMs, departureMs, isFirstInBlock, isLastInBlock)
++		expanded = append(expanded, stopTime)
++	}
++
++	return expanded
++}
++
++// buildScheduleFrequency converts a trip's schedule row and frequency row into a
++// ScheduleFrequency, deriving the arrival/departure flags from block position.
++func buildScheduleFrequency(row gtfsdb.GetScheduleForStopOnDateRow, freq gtfsdb.Frequency, rowCtx scheduleRowContext) models.ScheduleFrequency {
++	isFirstInBlock, isLastInBlock := blockBoundaries(row, rowCtx.activeServiceBlockTripsMap)
++
++	// Java OBA leaves frequency stopHeadsign null.
++	return models.NewScheduleFrequencyFromDB(
++		freq,
++		rowCtx.startOfDay,
++		utils.FormCombinedID(rowCtx.agencyID, row.ServiceID),
++		utils.FormCombinedID(rowCtx.agencyID, row.TripID),
++		"",
++		!isFirstInBlock,
++		!isLastInBlock,
++	)
++}
++
++// addFrequencyToDirectionGroup appends scheduleFreq to the route's direction bucket.
++func addFrequencyToDirectionGroup(acc *routeDirectionAccumulators, dir routeDirection, scheduleFreq models.ScheduleFrequency) {
++	if acc.frequencies[dir.combinedRouteID] == nil {
++		acc.frequencies[dir.combinedRouteID] = make(map[string][]models.ScheduleFrequency)
++	}
++	acc.frequencies[dir.combinedRouteID][dir.directionID] = append(acc.frequencies[dir.combinedRouteID][dir.directionID], scheduleFreq)
++}
++
++// frequencyVoteWeight returns headsign votes per frequency row: estimated departures in
++// its window (range / headway), per Java OBA, falling back to 1 for bad headways.
++func frequencyVoteWeight(freq gtfsdb.Frequency) int {
++	if freq.HeadwaySecs <= 0 {
++		return 1
++	}
++	durationSecs := (freq.EndTime - freq.StartTime) / int64(time.Second)
++	weight := (durationSecs + freq.HeadwaySecs - 1) / freq.HeadwaySecs
++	if weight <= 0 {
++		return 1
++	}
++	return int(weight)
++}
++
++// pluralityHeadsign picks the direction's representative tripHeadsign: vote plurality,
++// with ties resolved by the alphabetically first headsign.
++func pluralityHeadsign(
+ 	routeDirectionHeadsignCounts map[string]map[string]map[string]int,
+ 	combinedRouteID, directionID string,
+-	headsign sql.NullString,
+-) {
++) string {
++	tripHeadsign := ""
++	maxCount := 0
++	if dirHeadsigns, exists := routeDirectionHeadsignCounts[combinedRouteID][directionID]; exists {
++		headsigns := make([]string, 0, len(dirHeadsigns))
++		for headsign := range dirHeadsigns {
++			headsigns = append(headsigns, headsign)
++		}
++		slices.Sort(headsigns)
++		for _, headsign := range headsigns {
++			count := dirHeadsigns[headsign]
++			if count > maxCount {
++				maxCount = count
++				tripHeadsign = headsign
++			}
++		}
++	}
++	return tripHeadsign
++}
++
++// recordHeadsignVote tallies weight votes for a headsign under the route's direction
++// bucket; blank headsigns cast no vote.
++func recordHeadsignVote(acc *routeDirectionAccumulators, dir routeDirection, headsign sql.NullString, weight int) {
+ 	if !headsign.Valid || headsign.String == "" {
+ 		return
+ 	}
+ 
+-	if routeDirectionHeadsignCounts[combinedRouteID] == nil {
+-		routeDirectionHeadsignCounts[combinedRouteID] = make(map[string]map[string]int)
++	if weight < 1 {
++		weight = 1
++	}
++
++	if acc.headsignCounts[dir.combinedRouteID] == nil {
++		acc.headsignCounts[dir.combinedRouteID] = make(map[string]map[string]int)
+ 	}
+-	if routeDirectionHeadsignCounts[combinedRouteID][directionID] == nil {
+-		routeDirectionHeadsignCounts[combinedRouteID][directionID] = make(map[string]int)
++	if acc.headsignCounts[dir.combinedRouteID][dir.directionID] == nil {
++		acc.headsignCounts[dir.combinedRouteID][dir.directionID] = make(map[string]int)
+ 	}
+-	routeDirectionHeadsignCounts[combinedRouteID][directionID][headsign.String]++
++	acc.headsignCounts[dir.combinedRouteID][dir.directionID][headsign.String] += weight
+ }
+diff --git a/internal/restapi/schedule_for_stop_handler_test.go b/internal/restapi/schedule_for_stop_handler_test.go
+index fa466e07..70f78bf4 100644
+--- a/internal/restapi/schedule_for_stop_handler_test.go
++++ b/internal/restapi/schedule_for_stop_handler_test.go
+@@ -829,7 +829,7 @@ func TestGroupScheduleRowsByRouteAndDirection(t *testing.T) {
+ 			makeRow("trip-in", "10", sql.NullInt64{Int64: 1, Valid: true}, "Uptown"),
+ 		}
+ 
+-		schedules, _, err := groupScheduleRowsByRouteAndDirection(context.Background(), rows, rowCtx)
++		schedules, _, _, err := groupScheduleRowsByRouteAndDirection(context.Background(), rows, rowCtx)
+ 		assert.NoError(t, err)
+ 
+ 		routeGroups, ok := schedules["1_10"]
+@@ -849,7 +849,7 @@ func TestGroupScheduleRowsByRouteAndDirection(t *testing.T) {
+ 			makeRow("trip-b", "10", sql.NullInt64{Int64: 0, Valid: true}, "Downtown"),
+ 		}
+ 
+-		schedules, headsignCounts, err := groupScheduleRowsByRouteAndDirection(context.Background(), rows, rowCtx)
++		schedules, _, headsignCounts, err := groupScheduleRowsByRouteAndDirection(context.Background(), rows, rowCtx)
+ 		assert.NoError(t, err)
+ 
+ 		assert.Len(t, schedules["1_10"], 1, "expected a single direction bucket")
+@@ -862,7 +862,7 @@ func TestGroupScheduleRowsByRouteAndDirection(t *testing.T) {
+ 			makeRow("trip-a", "10", sql.NullInt64{Valid: false}, "Downtown"),
+ 		}
+ 
+-		schedules, _, err := groupScheduleRowsByRouteAndDirection(context.Background(), rows, rowCtx)
++		schedules, _, _, err := groupScheduleRowsByRouteAndDirection(context.Background(), rows, rowCtx)
+ 		assert.NoError(t, err)
+ 
+ 		assert.Len(t, schedules["1_10"], 1)
+@@ -877,7 +877,7 @@ func TestGroupScheduleRowsByRouteAndDirection(t *testing.T) {
+ 			makeRow("trip-in-1", "10", sql.NullInt64{Int64: 1, Valid: true}, "Uptown"),
+ 		}
+ 
+-		_, headsignCounts, err := groupScheduleRowsByRouteAndDirection(context.Background(), rows, rowCtx)
++		_, _, headsignCounts, err := groupScheduleRowsByRouteAndDirection(context.Background(), rows, rowCtx)
+ 		assert.NoError(t, err)
+ 
+ 		assert.Equal(t, 2, headsignCounts["1_10"]["0"]["Downtown"])
+@@ -893,7 +893,132 @@ func TestGroupScheduleRowsByRouteAndDirection(t *testing.T) {
+ 			makeRow("trip-a", "10", sql.NullInt64{Int64: 0, Valid: true}, "Downtown"),
+ 		}
+ 
+-		_, _, err := groupScheduleRowsByRouteAndDirection(ctx, rows, rowCtx)
++		_, _, _, err := groupScheduleRowsByRouteAndDirection(ctx, rows, rowCtx)
+ 		assert.ErrorIs(t, err, context.Canceled)
+ 	})
++
++	t.Run("routes frequency-based trips to the frequency map", func(t *testing.T) {
++		rows := []gtfsdb.GetScheduleForStopOnDateRow{
++			makeRow("trip-freq", "10", sql.NullInt64{Int64: 0, Valid: true}, "Downtown"),
++			makeRow("trip-normal", "10", sql.NullInt64{Int64: 0, Valid: true}, "Downtown"),
++		}
++		rowCtxWithFreqs := rowCtx
++		rowCtxWithFreqs.freqMap = map[string][]gtfsdb.Frequency{
++			"trip-freq": {
++				{TripID: "trip-freq", StartTime: int64(6 * time.Hour), EndTime: int64(9 * time.Hour), HeadwaySecs: 600, ExactTimes: 0},
++			},
++		}
++
++		schedules, frequencies, _, err := groupScheduleRowsByRouteAndDirection(context.Background(), rows, rowCtxWithFreqs)
++		assert.NoError(t, err)
++
++		assert.Len(t, schedules["1_10"]["0"], 1, "only the non-frequency trip keeps a schedule stop time")
++		assert.Equal(t, "1_trip-normal", schedules["1_10"]["0"][0].TripID)
++
++		require.Len(t, frequencies["1_10"]["0"], 1, "the frequency trip gets one schedule frequency per frequency row")
++		freqEntry := frequencies["1_10"]["0"][0]
++		assert.Equal(t, "1_trip-freq", freqEntry.TripID)
++		assert.Equal(t, startOfDay.Add(6*time.Hour).UnixMilli(), freqEntry.FrequencyWindow.StartTime.UnixMilli())
++	})
++
++	t.Run("expands exact_times=1 trips into discrete stop times", func(t *testing.T) {
++		rows := []gtfsdb.GetScheduleForStopOnDateRow{
++			makeRow("trip-exact", "10", sql.NullInt64{Int64: 0, Valid: true}, "Downtown"),
++		}
++		rowCtxWithExactFreqs := rowCtx
++		rowCtxWithExactFreqs.freqMap = map[string][]gtfsdb.Frequency{
++			"trip-exact": {
++				{TripID: "trip-exact", StartTime: int64(6 * time.Hour), EndTime: int64(9 * time.Hour), HeadwaySecs: 1800, ExactTimes: 1},
++			},
++		}
++
++		schedules, frequencies, _, err := groupScheduleRowsByRouteAndDirection(context.Background(), rows, rowCtxWithExactFreqs)
++		assert.NoError(t, err)
++
++		// Window 06:00-09:00 at a 30-minute headway yields 6 template expansions.
++		require.Len(t, schedules["1_10"]["0"], 6, "exact_times=1 trips are expanded per headway offset")
++		for i, st := range schedules["1_10"]["0"] {
++			expectedOffset := 6*time.Hour + time.Duration(i)*30*time.Minute
++			assert.Equal(t, startOfDay.Add(expectedOffset).UnixMilli(), st.ArrivalTime)
++			assert.Equal(t, "1_trip-exact", st.TripID)
++		}
++		assert.Empty(t, frequencies, "exact_times=1 trips produce no schedule frequencies")
++	})
++}
++
++func TestScheduleForStopHandlerWithFrequency(t *testing.T) {
++	api := createTestApiWithFrequencyData(t)
++	defer api.Shutdown()
++
++	startOfDay := time.Date(2025, 6, 12, 0, 0, 0, 0, time.UTC)
++	combinedStopID := utils.FormCombinedID(freqAgencyID, freqStopBID)
++	endpoint := "/api/where/schedule-for-stop/" + combinedStopID + ".json?key=TEST&date=2025-06-12"
++
++	resp, model := serveApiAndRetrieveEndpoint(t, api, endpoint)
++	require.Equal(t, http.StatusOK, resp.StatusCode)
++
++	data := model.Data.(map[string]any)
++	entry := data["entry"].(map[string]any)
++	schedules := entry["stopRouteSchedules"].([]any)
++	require.Len(t, schedules, 1, "single frequency route in fixture")
++	require.Len(t, schedules[0].(map[string]any)["stopRouteDirectionSchedules"].([]any), 1)
++
++	dirSchedule := schedules[0].(map[string]any)["stopRouteDirectionSchedules"].([]any)[0].(map[string]any)
++
++	stopTimesByTrip := make(map[string][]map[string]any)
++	for _, stAny := range dirSchedule["scheduleStopTimes"].([]any) {
++		st := stAny.(map[string]any)
++		tripID := st["tripId"].(string)
++		stopTimesByTrip[tripID] = append(stopTimesByTrip[tripID], st)
++	}
++
++	frequenciesByTrip := make(map[string][]map[string]any)
++	for _, freqAny := range dirSchedule["scheduleFrequencies"].([]any) {
++		freq := freqAny.(map[string]any)
++		tripID := freq["tripId"].(string)
++		frequenciesByTrip[tripID] = append(frequenciesByTrip[tripID], freq)
++	}
++
++	t.Run("headway-based trip appears only as scheduleFrequencies", func(t *testing.T) {
++		combinedTripID := utils.FormCombinedID(freqAgencyID, freqTripID)
++		freqEntries, ok := frequenciesByTrip[combinedTripID]
++		require.True(t, ok, "expected a schedule frequency for the headway-based trip")
++		require.Len(t, freqEntries, 1, "one frequency row per frequency trip")
++
++		freqEntry := freqEntries[0]
++		assert.Equal(t, float64(startOfDay.Add(6*time.Hour).UnixMilli()), freqEntry["startTime"])
++		assert.Equal(t, float64(startOfDay.Add(9*time.Hour).UnixMilli()), freqEntry["endTime"])
++		assert.Equal(t, float64(600), freqEntry["headway"])
++		assert.Equal(t, float64(startOfDay.UnixMilli()), freqEntry["serviceDate"])
++		assert.Equal(t, utils.FormCombinedID(freqAgencyID, freqServiceID), freqEntry["serviceId"])
++		assert.Equal(t, combinedTripID, freqEntry["tripId"])
++		assert.True(t, freqEntry["arrivalEnabled"].(bool), "second stop of the two-stop block has an arrival")
++		assert.False(t, freqEntry["departureEnabled"].(bool), "last stop of the block has no onward departure")
++
++		_, stillHasStopTime := stopTimesByTrip[combinedTripID]
++		assert.False(t, stillHasStopTime, "headway-based trips have no template stop time in scheduleStopTimes")
++	})
++
++	t.Run("exact_times=1 trips expand into discrete stop times; plain trips keep theirs", func(t *testing.T) {
++		assert.Len(t, stopTimesByTrip, 2, "exact_times=1 and plain trips both appear in scheduleStopTimes")
++
++		exactTripID := utils.FormCombinedID(freqAgencyID, freqExactTripID)
++		exactStopTimes := stopTimesByTrip[exactTripID]
++		require.Len(t, exactStopTimes, 6, "window 06:00-09:00 at 30-minute headway yields 6 stop times")
++
++		for i, st := range exactStopTimes {
++			expected := startOfDay.Add(6*time.Hour + 15*time.Minute + time.Duration(i)*30*time.Minute).UnixMilli()
++			assert.Equal(t, float64(expected), st["arrivalTime"])
++			assert.Equal(t, float64(expected), st["departureTime"])
++		}
++		// Stop B is 15 minutes into the trip; block flags come from block position.
++		assert.True(t, exactStopTimes[0]["arrivalEnabled"].(bool), "stop B is not the first block stop")
++		assert.False(t, exactStopTimes[0]["departureEnabled"].(bool), "stop B is the block's last stop")
++		assert.Empty(t, frequenciesByTrip[exactTripID], "expanded exact_times=1 trips produce no schedule frequencies")
++
++		normalTripID := utils.FormCombinedID(freqAgencyID, freqNormalTripD)
++		require.Len(t, stopTimesByTrip[normalTripID], 1, "plain trips keep their single template stop time")
++		assert.Equal(t, float64(startOfDay.Add(8*time.Hour+15*time.Minute).UnixMilli()), stopTimesByTrip[normalTripID][0]["departureTime"])
++		assert.Empty(t, frequenciesByTrip[normalTripID], "plain trips have no schedule frequencies")
++	})
+ }
+diff --git a/internal/restapi/trip_details_handler.go b/internal/restapi/trip_details_handler.go
+index 4de37a29..2259344a 100644
+--- a/internal/restapi/trip_details_handler.go
++++ b/internal/restapi/trip_details_handler.go
+@@ -4,6 +4,7 @@ import (
+ 	"context"
+ 	"fmt"
+ 	"net/http"
++	"net/url"
+ 	"strconv"
+ 	"time"
+ 
+@@ -38,6 +39,11 @@ const (
+ 	tripTimeLayout    = "2006-01-02_15-04-05" // e.g. "2024-06-15_14-30-00"
+ )
+ 
++const (
++	errInvalidServiceDate = "must be a valid Unix timestamp in milliseconds or a date in yyyy-MM-dd format"
++	errInvalidTime        = "must be a valid Unix timestamp in milliseconds or a datetime in yyyy-MM-dd_HH-mm-ss format"
++)
++
+ // parseEpochOrLayoutTime parses a param accepting either a Unix timestamp in
+ // milliseconds or a timestamp in the given layout. A missing param yields a nil
+ // time and no error; ok is false only when a supplied value matches neither form.
+@@ -74,6 +80,25 @@ func localizeTripTimes(params *TripParams, loc *time.Location) {
+ 	}
+ }
+ 
++// resolveLocation returns the caller-supplied timezone, or UTC when absent.
++func resolveLocation(loc ...*time.Location) *time.Location {
++	if len(loc) > 0 && loc[0] != nil {
++		return loc[0]
++	}
++	return time.UTC
++}
++
++// parseTimeField parses the time-valued query param key into a timestamp,
++// recording a field error when it matches neither Unix millis nor layout.
++func parseTimeField(query url.Values, key, layout, errMsg string, loc *time.Location, fieldErrors map[string][]string) *time.Time {
++	parsed, ok := parseEpochOrLayoutTime(query.Get(key), layout, loc)
++	if !ok {
++		fieldErrors[key] = []string{errMsg}
++		return nil
++	}
++	return parsed
++}
++
+ // parseTripParams parses and validates the common trip query params, applying
+ // the caller's per-endpoint defaults to any include* param the request omits.
+ func (api *RestAPI) parseTripParams(r *http.Request, defaults TripParamDefaults, loc ...*time.Location) (TripParams, map[string][]string) {
+@@ -81,10 +106,7 @@ func (api *RestAPI) parseTripParams(r *http.Request, defaults TripParamDefaults,
+ 
+ 	// Timestamps without an explicit offset are read in the agency's timezone when
+ 	// the caller supplies one, and in UTC otherwise.
+-	parseLoc := time.UTC
+-	if len(loc) > 0 && loc[0] != nil {
+-		parseLoc = loc[0]
+-	}
++	parseLoc := resolveLocation(loc...)
+ 
+ 	params := TripParams{
+ 		IncludeTrip:     defaults.IncludeTrip,
+@@ -95,17 +117,8 @@ func (api *RestAPI) parseTripParams(r *http.Request, defaults TripParamDefaults,
+ 
+ 	fieldErrors := make(map[string][]string)
+ 
+-	if serviceDate, ok := parseEpochOrLayoutTime(query.Get("serviceDate"), serviceDateLayout, parseLoc); ok {
+-		params.ServiceDate = serviceDate
+-	} else {
+-		fieldErrors["serviceDate"] = []string{"must be a valid Unix timestamp in milliseconds or a date in yyyy-MM-dd format"}
+-	}
+-
+-	if timeParam, ok := parseEpochOrLayoutTime(query.Get("time"), tripTimeLayout, parseLoc); ok {
+-		params.Time = timeParam
+-	} else {
+-		fieldErrors["time"] = []string{"must be a valid Unix timestamp in milliseconds or a datetime in yyyy-MM-dd_HH-mm-ss format"}
+-	}
++	params.ServiceDate = parseTimeField(query, "serviceDate", serviceDateLayout, errInvalidServiceDate, parseLoc, fieldErrors)
++	params.Time = parseTimeField(query, "time", tripTimeLayout, errInvalidTime, parseLoc, fieldErrors)
+ 
+ 	params.IncludeTrip, fieldErrors = utils.ParseBoolParam(query, "includeTrip", params.IncludeTrip, fieldErrors)
+ 	params.IncludeSchedule, fieldErrors = utils.ParseBoolParam(query, "includeSchedule", params.IncludeSchedule, fieldErrors)
+@@ -115,9 +128,7 @@ func (api *RestAPI) parseTripParams(r *http.Request, defaults TripParamDefaults,
+ 		return params, fieldErrors
+ 	}
+ 
+-	if len(loc) > 0 && loc[0] != nil {
+-		localizeTripTimes(&params, loc[0])
+-	}
++	localizeTripTimes(&params, parseLoc)
+ 
+ 	return params, nil
+ }
+@@ -230,12 +241,10 @@ func (api *RestAPI) tripDetailsHandler(w http.ResponseWriter, r *http.Request) {
+ 
+ 	if params.IncludeStatus {
+ 		var statusErr error
+-		status, statusExtras, statusErr = api.BuildTripStatus(ctx, agencyID, trip.ID, requestedVehicle, serviceDate, currentTime)
++		status, statusExtras, statusErr = api.BuildTripStatus(ctx, agencyID, trip.ID, requestedVehicle, serviceDate, currentTime, nil)
+ 		if statusErr != nil {
+-			api.Logger.Warn("BuildTripStatus failed",
+-				"trip_id", trip.ID,
+-				"error", statusErr.Error())
+-			status = nil
++			api.serverErrorResponse(w, r, statusErr)
++			return
+ 		}
+ 
+ 		// Extension 4e: Explicitly nil out the status if there is no actual tracking record.
+diff --git a/internal/restapi/trip_for_vehicle_handler.go b/internal/restapi/trip_for_vehicle_handler.go
+index 71a45e3f..7f5f3260 100644
+--- a/internal/restapi/trip_for_vehicle_handler.go
++++ b/internal/restapi/trip_for_vehicle_handler.go
+@@ -20,26 +20,13 @@ func (api *RestAPI) tripForVehicleHandler(w http.ResponseWriter, r *http.Request
+ 		return
+ 	}
+ 
+-	vehicle, err := api.GtfsManager.GetVehicleByID(vehicleID)
+-
+-	if err != nil {
+-		api.sendNotFound(w, r)
+-		return
+-	}
+-
+-	// Return 404 when vehicle has no associated trip (idle vehicle)
+-	// or when the trip ID is empty (avoiding a futile DB lookup)
+-	if vehicle == nil || vehicle.Trip == nil || vehicle.Trip.ID.ID == "" {
+-		api.Logger.Debug("vehicle has no current trip (idle)",
+-			"vehicleID", vehicleID, "agencyID", agencyID)
+-		api.sendNotFound(w, r)
++	tripID, ok := api.getVehicleTripIDOr404(w, r, agencyID, vehicleID)
++	if !ok {
+ 		return
+ 	}
+ 
+ 	ctx := r.Context()
+ 
+-	tripID := vehicle.Trip.ID.ID
+-
+ 	agency, err := api.GtfsManager.GtfsDB.Queries.GetAgency(ctx, agencyID)
+ 	if err != nil {
+ 		api.serverErrorResponse(w, r, err)
+@@ -69,34 +56,27 @@ func (api *RestAPI) tripForVehicleHandler(w http.ResponseWriter, r *http.Request
+ 
+ 	serviceDate, midnight := utils.ServiceDateMidnight(params.ServiceDate, currentTime)
+ 
++	// Fetch the trip's frequency rows once and share them with BuildTripStatus.
++	freqRows, err := api.GtfsManager.GtfsDB.Queries.GetFrequenciesForTrip(ctx, tripID)
++	if err != nil {
++		api.serverErrorResponse(w, r, err)
++		return
++	}
++	freqMap := map[string][]gtfsdb.Frequency{tripID: freqRows}
++
+ 	var status *models.TripStatus
+ 	var statusExtras *tripStatusExtras
+ 	if params.IncludeStatus {
+ 		var statusErr error
+-		status, statusExtras, statusErr = api.BuildTripStatus(ctx, agencyID, tripID, nil, serviceDate, currentTime)
++		status, statusExtras, statusErr = api.BuildTripStatus(ctx, agencyID, tripID, nil, serviceDate, currentTime, freqMap)
+ 		if statusErr != nil {
+-			api.Logger.Warn("failed to build trip status",
+-				"tripID", tripID,
+-				"agencyID", agencyID,
+-				"error", statusErr)
++			api.Logger.Warn("BuildTripStatus failed", "tripID", tripID, "error", statusErr)
+ 			status = nil
+ 		}
+ 	}
+ 
+-	trip, err := api.GtfsManager.GtfsDB.Queries.GetTrip(ctx, tripID)
+-	if err != nil {
+-		// If the trip doesn't exist in our DB (sql.ErrNoRows), return 404 instead of 500
+-		if errors.Is(err, sql.ErrNoRows) {
+-			api.Logger.Warn("vehicle references non-existent trip",
+-				"vehicleID", vehicleID, "tripID", tripID, "agencyID", agencyID)
+-			api.sendNotFound(w, r)
+-			return
+-		}
+-		api.Logger.Error("database error fetching trip",
+-			"error", err,
+-			"tripID", tripID,
+-			"agencyID", agencyID)
+-		api.serverErrorResponse(w, r, err)
++	trip, ok := api.getTripOr404(ctx, w, r, agencyID, vehicleID, tripID)
++	if !ok {
+ 		return
+ 	}
+ 
+@@ -105,10 +85,8 @@ func (api *RestAPI) tripForVehicleHandler(w http.ResponseWriter, r *http.Request
+ 		var scheduleErr error
+ 		schedule, scheduleErr = api.BuildTripSchedule(ctx, agencyID, serviceDate, &trip, loc)
+ 		if scheduleErr != nil {
+-			api.Logger.Warn("failed to build trip schedule",
+-				"tripID", tripID,
+-				"agencyID", agencyID,
+-				"error", scheduleErr)
++			api.serverErrorResponse(w, r, scheduleErr)
++			return
+ 		}
+ 	}
+ 
+@@ -116,10 +94,17 @@ func (api *RestAPI) tripForVehicleHandler(w http.ResponseWriter, r *http.Request
+ 	// built its situations are this trip's and are reused here.
+ 	situationIDs, situationRefs := api.tripSituationsFor(ctx, tripID, statusExtras)
+ 
++	var frequency *models.Frequency
++	if len(freqRows) > 0 {
++		// TripDetails has one frequency field; take the window-matched row.
++		converted := models.NewFrequencyFromDB(*selectFrequency(freqRows, serviceDate, currentTime), serviceDate)
++		frequency = &converted
++	}
++
+ 	entry := &models.TripDetails{
+ 		TripID:       utils.FormCombinedID(agencyID, tripID),
+ 		ServiceDate:  models.NewModelTime(midnight),
+-		Frequency:    nil,
++		Frequency:    frequency,
+ 		Status:       status,
+ 		Schedule:     schedule,
+ 		SituationIDs: situationIDs,
+@@ -239,3 +224,41 @@ func referencedStopIDs(status *models.TripStatus, schedule *models.Schedule) ([]
+ 
+ 	return stopIDs, nil
+ }
++
++func (api *RestAPI) getVehicleTripIDOr404(w http.ResponseWriter, r *http.Request, agencyID, vehicleID string) (string, bool) {
++	vehicle, err := api.GtfsManager.GetVehicleByID(vehicleID)
++	if err != nil {
++		api.sendNotFound(w, r)
++		return "", false
++	}
++
++	// Return 404 when vehicle has no associated trip (idle vehicle)
++	// or when the trip ID is empty (avoiding a futile DB lookup)
++	if vehicle == nil || vehicle.Trip == nil || vehicle.Trip.ID.ID == "" {
++		api.Logger.Debug("vehicle has no current trip (idle)",
++			"vehicleID", vehicleID, "agencyID", agencyID)
++		api.sendNotFound(w, r)
++		return "", false
++	}
++	return vehicle.Trip.ID.ID, true
++}
++
++func (api *RestAPI) getTripOr404(ctx context.Context, w http.ResponseWriter, r *http.Request, agencyID, vehicleID, tripID string) (gtfsdb.Trip, bool) {
++	trip, err := api.GtfsManager.GtfsDB.Queries.GetTrip(ctx, tripID)
++	if err != nil {
++		// If the trip doesn't exist in our DB (sql.ErrNoRows), return 404 instead of 500
++		if errors.Is(err, sql.ErrNoRows) {
++			api.Logger.Warn("vehicle references non-existent trip",
++				"vehicleID", vehicleID, "tripID", tripID, "agencyID", agencyID)
++			api.sendNotFound(w, r)
++			return gtfsdb.Trip{}, false
++		}
++		api.Logger.Error("database error fetching trip",
++			"error", err,
++			"tripID", tripID,
++			"agencyID", agencyID)
++		api.serverErrorResponse(w, r, err)
++		return gtfsdb.Trip{}, false
++	}
++	return trip, true
++}
+diff --git a/internal/restapi/trip_for_vehicle_handler_test.go b/internal/restapi/trip_for_vehicle_handler_test.go
+index 6a3313eb..f0bdc02b 100644
+--- a/internal/restapi/trip_for_vehicle_handler_test.go
++++ b/internal/restapi/trip_for_vehicle_handler_test.go
+@@ -116,6 +116,60 @@ func TestTripForVehicleHandlerEndToEnd(t *testing.T) {
+ 	}
+ }
+ 
++// TestTripForVehicleWithFrequency verifies the TripDetails entry carries the
++// trip's frequency data when the vehicle's trip is frequency-based, and that a
++// non-frequency trip keeps the frequency field absent.
++func TestTripForVehicleWithFrequency(t *testing.T) {
++	api := createTestApiWithFrequencyData(t)
++	t.Cleanup(api.GtfsManager.MockResetRealTimeData)
++
++	const mockVehicleID = "FREQ_VEHICLE_1"
++	combinedRouteID := utils.FormCombinedID(freqAgencyID, freqRouteID)
++
++	api.GtfsManager.MockAddAgency(freqAgencyID, "frequency-agency")
++	api.GtfsManager.MockAddRoute(combinedRouteID, freqAgencyID, combinedRouteID)
++	api.GtfsManager.MockAddTrip(freqTripID, freqAgencyID, combinedRouteID)
++	api.GtfsManager.MockAddVehicle(mockVehicleID, freqTripID, combinedRouteID)
++
++	vehicleID := utils.FormCombinedID(freqAgencyID, mockVehicleID)
++	resp, model := callAPIHandler[TripDetailsResponse](t, api, tripForVehicleURL(vehicleID))
++
++	require.Equal(t, http.StatusOK, resp.StatusCode)
++	require.Equal(t, http.StatusOK, model.Code)
++
++	entry := model.Data.Entry
++	require.NotNil(t, entry.Frequency, "frequency should be populated for a frequency-based trip")
++	assert.Equal(t, 0, entry.Frequency.ExactTimes)
++	assert.Equal(t, 600*time.Second, entry.Frequency.Headway.Duration)
++	// Clock at 2025-06-12 08:00 UTC â†’ default serviceDate is 2025-06-12;
++	// the fixture window spans 06:00â€“09:00 UTC. Compare instants (millis):
++	// ModelTime round-trips through JSON in time.Local.
++	assert.Equal(t, time.Date(2025, 6, 12, 6, 0, 0, 0, time.UTC).UnixMilli(), entry.Frequency.StartTime.UnixMilli())
++	assert.Equal(t, time.Date(2025, 6, 12, 9, 0, 0, 0, time.UTC).UnixMilli(), entry.Frequency.EndTime.UnixMilli())
++}
++
++// TestTripForVehicle_NonFrequencyTripNoFrequency verifies a vehicle whose trip
++// has no frequency entry still yields a nil frequency field (no regression).
++func TestTripForVehicle_NonFrequencyTripNoFrequency(t *testing.T) {
++	api := createTestApiWithFrequencyData(t)
++	t.Cleanup(api.GtfsManager.MockResetRealTimeData)
++
++	const mockVehicleID = "FREQ_VEHICLE_2"
++	combinedRouteID := utils.FormCombinedID(freqAgencyID, freqRouteID)
++
++	api.GtfsManager.MockAddAgency(freqAgencyID, "frequency-agency")
++	api.GtfsManager.MockAddRoute(combinedRouteID, freqAgencyID, combinedRouteID)
++	api.GtfsManager.MockAddTrip(freqNormalTripD, freqAgencyID, combinedRouteID)
++	api.GtfsManager.MockAddVehicle(mockVehicleID, freqNormalTripD, combinedRouteID)
++
++	vehicleID := utils.FormCombinedID(freqAgencyID, mockVehicleID)
++	resp, model := callAPIHandler[TripDetailsResponse](t, api, tripForVehicleURL(vehicleID))
++
++	require.Equal(t, http.StatusOK, resp.StatusCode)
++	require.Equal(t, http.StatusOK, model.Code)
++	assert.Nil(t, model.Data.Entry.Frequency, "non-frequency trips must not carry frequency data")
++}
++
+ // TestTripForVehicleHandler_NotFoundCases verifies that 404 is returned for
+ // vehicle IDs that resolve to no live trip â€” unknown vehicle, idle vehicle
+ // (Trip.ID == ""), vehicle referencing a non-existent trip, and a vehicle
+diff --git a/internal/restapi/trips_for_location_handler.go b/internal/restapi/trips_for_location_handler.go
+index 5fc265e1..f82a089c 100644
+--- a/internal/restapi/trips_for_location_handler.go
++++ b/internal/restapi/trips_for_location_handler.go
+@@ -372,7 +372,11 @@ func (api *RestAPI) buildTripsForLocationEntries(
+ 	for agencyID := range agencyIDs {
+ 		agencyLocation := request.AgencyLocations[agencyID]
+ 		queryDayMidnight := serviceDateMidnight(request.CurrentTime, agencyLocation)
+-		days := api.serviceIDsForDays(ctx, queryDayMidnight)
++		days, err := api.serviceIDsForDays(ctx, queryDayMidnight)
++		if err != nil {
++			api.serverErrorResponse(w, r, err)
++			return nil, nil
++		}
+ 		services[agencyID] = days
+ 		serviceDatesByAgency[agencyID] = newServiceDateResolverFor(
+ 			queryDayMidnight, request.CurrentTime.In(agencyLocation), days)
+@@ -446,6 +450,17 @@ func (api *RestAPI) buildTripsForLocationEntries(
+ 		}
+ 	}
+ 
++	// Batch-fetch frequencies; success seeds nil to skip fallback queries.
++	freqMap := make(map[string][]gtfsdb.Frequency)
++	if len(validVehicleTrips) > 0 {
++		var freqErr error
++		freqMap, freqErr = api.fetchFrequenciesForTrips(ctx, validVehicleTrips)
++		if freqErr != nil {
++			api.serverErrorResponse(w, r, freqErr)
++			return nil, nil
++		}
++	}
++
+ 	var result []models.TripsForLocationListEntry
+ 	situations := newSituationCollector()
+ 
+@@ -465,6 +480,12 @@ func (api *RestAPI) buildTripsForLocationEntries(
+ 			api.Logger.Warn("missing timezone for trip agency", "trip_id", tripID, "agency_id", agencyID)
+ 			continue
+ 		}
++		serviceDate := serviceDatesByAgency[agencyID].Resolve(tripData)
++		frequency, freqErr := api.frequencyForEntry(ctx, freqMap, tripID, serviceDate, request.CurrentTime)
++		if freqErr != nil {
++			api.serverErrorResponse(w, r, freqErr)
++			return nil, nil
++		}
+ 
+ 		var schedule *models.TripsSchedule
+ 		var status *models.TripStatus
+@@ -480,22 +501,20 @@ func (api *RestAPI) buildTripsForLocationEntries(
+ 				blockTrips = blockTripsMap[blockTripsKey{agencyID: agencyID, blockID: tripData.BlockID.String}]
+ 			}
+ 
+-			schedule = api.buildScheduleFromMemory(
+-				tripData,
+-				agencyID,
+-				agencyLocation,
+-				stopTimesMap[tripID],
+-				shapePoints,
+-				stopCoords,
+-				blockTrips,
+-			)
++			schedule = api.buildScheduleFromMemory(scheduleData{
++				trip:            tripData,
++				agencyID:        agencyID,
++				currentLocation: agencyLocation,
++				stopTimes:       stopTimesMap[tripID],
++				shapePoints:     shapePoints,
++				stopCoords:      stopCoords,
++				blockTrips:      blockTrips,
++			}, frequency)
+ 		}
+ 
+-		serviceDate := serviceDatesByAgency[agencyID].Resolve(tripData)
+-
+ 		if request.IncludeStatus {
+ 			var statusErr error
+-			status, _, statusErr = api.BuildTripStatus(ctx, agencyID, tripID, nil, serviceDate, request.CurrentTime)
++			status, _, statusErr = api.BuildTripStatus(ctx, agencyID, tripID, nil, serviceDate, request.CurrentTime, freqMap)
+ 			if statusErr != nil {
+ 				api.Logger.Warn("BuildTripStatus failed", "tripID", tripID, "error", statusErr)
+ 				status = nil
+@@ -509,7 +528,7 @@ func (api *RestAPI) buildTripsForLocationEntries(
+ 		alerts := api.GtfsManager.GetAlertsByIDs(tripID, tripData.RouteID, agencyID)
+ 
+ 		entry := models.TripsForLocationListEntry{
+-			Frequency:    nil,
++			Frequency:    frequency,
+ 			Schedule:     schedule,
+ 			Status:       status,
+ 			ServiceDate:  serviceDate.UnixMilli(),
+@@ -536,6 +555,7 @@ func (api *RestAPI) buildScheduleForTrip(
+ 	ctx context.Context,
+ 	tripID, agencyID string, serviceDate time.Time,
+ 	currentLocation *time.Location,
++	freqMap map[string][]gtfsdb.Frequency,
+ ) (*models.TripsSchedule, error) {
+ 	shapeRows, _ := api.GtfsManager.GtfsDB.Queries.GetShapePointsByTripID(ctx, tripID)
+ 	var shapePoints []gtfs.ShapePoint
+@@ -557,8 +577,13 @@ func (api *RestAPI) buildScheduleForTrip(
+ 	}
+ 
+ 	stopTimesList := buildStopTimesList(api, ctx, stopTimes, shapePoints, agencyID)
++
++	frequency, freqErr := api.frequencyForEntry(ctx, freqMap, tripID, serviceDate, serviceDate)
++	if freqErr != nil {
++		return nil, freqErr
++	}
+ 	return &models.TripsSchedule{
+-		Frequency:      nil,
++		Frequency:      frequency,
+ 		NextTripId:     nextTripID,
+ 		PreviousTripId: previousTripID,
+ 		StopTimes:      stopTimesList,
+@@ -847,29 +872,33 @@ func (rb *referenceBuilder) getSituationsList() []models.Situation {
+ 	return rb.api.situationReferences(rb.situations)
+ }
+ 
++// scheduleData bundles pre-fetched inputs for buildScheduleFromMemory.
++type scheduleData struct {
++	trip            gtfsdb.Trip
++	agencyID        string
++	currentLocation *time.Location
++	stopTimes       []gtfsdb.StopTime
++	shapePoints     []gtfs.ShapePoint
++	stopCoords      map[string]struct{ lat, lon float64 }
++	blockTrips      []gtfsdb.GetTripsByBlockIDsRow
++}
++
+ // buildScheduleFromMemory constructs a TripsSchedule from pre-fetched stop times, shape points, and block trips.
+-func (api *RestAPI) buildScheduleFromMemory(
+-	trip gtfsdb.Trip,
+-	agencyID string,
+-	currentLocation *time.Location,
+-	stopTimes []gtfsdb.StopTime,
+-	shapePoints []gtfs.ShapePoint,
+-	stopCoords map[string]struct{ lat, lon float64 },
+-	blockTrips []gtfsdb.GetTripsByBlockIDsRow,
+-) *models.TripsSchedule {
++// frequency is the caller's pre-computed entry frequency (nil when the trip has none).
++func (api *RestAPI) buildScheduleFromMemory(data scheduleData, frequency *models.Frequency) *models.TripsSchedule {
+ 
+ 	// Calculate Next/Prev using in-memory block trips
+-	nextTripID, previousTripID := api.calculateNextPrevFromMemory(trip, blockTrips, agencyID)
++	nextTripID, previousTripID := api.calculateNextPrevFromMemory(data.trip, data.blockTrips, data.agencyID)
+ 
+ 	// Calculate Distances using in-memory coords
+-	stopTimesList := api.calculateBatchStopDistances(stopTimes, shapePoints, stopCoords, agencyID)
++	stopTimesList := api.calculateBatchStopDistances(data.stopTimes, data.shapePoints, data.stopCoords, data.agencyID)
+ 
+ 	return &models.TripsSchedule{
+-		Frequency:      nil,
++		Frequency:      frequency,
+ 		NextTripId:     nextTripID,
+ 		PreviousTripId: previousTripID,
+ 		StopTimes:      stopTimesList,
+-		TimeZone:       currentLocation.String(),
++		TimeZone:       data.currentLocation.String(),
+ 	}
+ }
+ 
+diff --git a/internal/restapi/trips_for_location_handler_test.go b/internal/restapi/trips_for_location_handler_test.go
+index d7640760..e5528510 100644
+--- a/internal/restapi/trips_for_location_handler_test.go
++++ b/internal/restapi/trips_for_location_handler_test.go
+@@ -155,6 +155,74 @@ func TestTripsForLocationHandler_UsesEachTripAgencyTimezone(t *testing.T) {
+ 	}
+ }
+ 
++// TestTripsForLocationWithFrequency verifies active trips near a location
++// carry their frequency window (on the entry and the schedule) while
++// non-frequency trips keep the field null. Both trips are found via
++// real-time vehicles positioned inside the query bounds; the fixture stops
++// sit at (37.7749, -122.4194) and (37.7849, -122.4094).
++func TestTripsForLocationWithFrequency(t *testing.T) {
++	api := createTestApiWithFrequencyData(t)
++	defer api.Shutdown()
++
++	latitude := float32(37.78)
++	longitude := float32(-122.415)
++	clockTime := frequencyFixtureClock
++	combinedRouteID := utils.FormCombinedID(freqAgencyID, freqRouteID)
++
++	api.GtfsManager.MockAddVehicleWithOptions("freq-vehicle", freqTripID, combinedRouteID,
++		internalgtfs.MockVehicleOptions{
++			Timestamp: &clockTime,
++			Position: &gtfs.Position{
++				Latitude:  &latitude,
++				Longitude: &longitude,
++			},
++		})
++	api.GtfsManager.MockAddVehicleWithOptions("normal-vehicle", freqNormalTripD, combinedRouteID,
++		internalgtfs.MockVehicleOptions{
++			Timestamp: &clockTime,
++			Position: &gtfs.Position{
++				Latitude:  &latitude,
++				Longitude: &longitude,
++			},
++		})
++
++	url := fmt.Sprintf("/api/where/trips-for-location.json?key=TEST&lat=%f&lon=%f&latSpan=%f&lonSpan=%f&includeSchedule=true&time=%d",
++		37.78, -122.415, 0.1, 0.1, clockTime.UnixMilli())
++	resp, model := callAPIHandler[TripsForLocationResponse](t, api, url)
++
++	require.Equal(t, http.StatusOK, resp.StatusCode)
++	require.Equal(t, http.StatusOK, model.Code)
++	require.Len(t, model.Data.List, 2, "both mock vehicles are inside the bounds")
++
++	for _, entry := range model.Data.List {
++		_, entryTripID, err := utils.ExtractAgencyIDAndCodeID(entry.TripId)
++		require.NoError(t, err)
++
++		require.NotNil(t, entry.Schedule, "schedule should be present when includeSchedule=true")
++
++		if entryTripID == freqNormalTripD {
++			assert.Nil(t, entry.Frequency, "non-frequency trip must not carry frequency data")
++			assert.Nil(t, entry.Schedule.Frequency, "schedule for non-frequency trip must not carry frequency data")
++			continue
++		}
++
++		assert.Equal(t, freqTripID, entryTripID)
++		require.NotNil(t, entry.Frequency, "frequency trip %q must carry frequency data", entryTripID)
++		assert.Equal(t, 0, entry.Frequency.ExactTimes)
++		assert.Equal(t, 600*time.Second, entry.Frequency.Headway.Duration)
++
++		// Fixture windows span 06:00-09:00 UTC on the 2025-06-12 service date
++		// (the fixture clock); compare instants (millis) because ModelTime
++		// round-trips through JSON in time.Local.
++		assert.Equal(t, time.Date(2025, 6, 12, 6, 0, 0, 0, time.UTC).UnixMilli(), entry.Frequency.StartTime.UnixMilli())
++		assert.Equal(t, time.Date(2025, 6, 12, 9, 0, 0, 0, time.UTC).UnixMilli(), entry.Frequency.EndTime.UnixMilli())
++
++		require.NotNil(t, entry.Schedule.Frequency, "schedule for frequency trip %q must carry frequency data", entryTripID)
++		assert.Equal(t, entry.Frequency.StartTime.UnixMilli(), entry.Schedule.Frequency.StartTime.UnixMilli())
++		assert.Equal(t, entry.Frequency.EndTime.UnixMilli(), entry.Schedule.Frequency.EndTime.UnixMilli())
++	}
++}
++
+ func multiTimezoneTripsForLocationFiles() map[string]string {
+ 	return map[string]string{
+ 		"agency.txt": "agency_id,agency_name,agency_url,agency_timezone\n" +
+diff --git a/internal/restapi/trips_for_route_handler.go b/internal/restapi/trips_for_route_handler.go
+index f4ba3b40..39a0a0f3 100644
+--- a/internal/restapi/trips_for_route_handler.go
++++ b/internal/restapi/trips_for_route_handler.go
+@@ -7,6 +7,7 @@ import (
+ 	"log/slog"
+ 	"net/http"
+ 	"net/url"
++	"slices"
+ 	"strconv"
+ 	"strings"
+ 	"time"
+@@ -314,13 +315,64 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 		}
+ 	}
+ 
+-	todayMidnight := time.Date(currentTime.Year(), currentTime.Month(), currentTime.Day(), 0, 0, 0, 0, currentLocation)
+-	serviceDates := newServiceDateResolverFor(todayMidnight, currentTime, serviceIDsByDay{
+-		QueryDay:    serviceIDs,
+-		PreviousDay: prevServiceIDs,
+-	})
++	// Interlined blocks can span agencies; fetch each agency's timezone so
++	// entries compute their service day in the right location.
++	agencyLocations := map[string]*time.Location{currentAgency.ID: currentLocation}
++	if len(tripAgencyMap) > 0 {
++		agencyIDSet := make(map[string]struct{}, len(tripAgencyMap))
++		for _, aID := range tripAgencyMap {
++			agencyIDSet[aID] = struct{}{}
++		}
++		delete(agencyIDSet, currentAgency.ID)
++		agencyIDs := make([]string, 0, len(agencyIDSet))
++		for id := range agencyIDSet {
++			agencyIDs = append(agencyIDs, id)
++		}
++		if len(agencyIDs) > 0 {
++			agencies, err := api.GtfsManager.GtfsDB.Queries.GetAgenciesByIDs(ctx, agencyIDs)
++			if err != nil {
++				api.serverErrorResponse(w, r, err)
++				return
++			}
++			for _, a := range agencies {
++				loc, err := loadAgencyLocation(a.ID, a.Timezone)
++				if err != nil {
++					api.Logger.Warn("trips-for-route: invalid agency timezone", "agency_id", a.ID, "error", err)
++					continue
++				}
++				agencyLocations[a.ID] = loc
++			}
++		}
++	}
++
++	serviceDatesByAgency := make(map[string]*serviceDateResolver, len(agencyLocations))
++	for agencyID, loc := range agencyLocations {
++		queryDayMidnight := serviceDateMidnight(currentTime, loc)
++		days, err := api.serviceIDsForDays(ctx, queryDayMidnight)
++		if err != nil {
++			api.serverErrorResponse(w, r, err)
++			return
++		}
++		serviceDatesByAgency[agencyID] = newServiceDateResolverFor(queryDayMidnight, currentTime.In(loc), days)
++	}
+ 	stopIDsMap := make(map[string]string)
+ 
++	// Batch-fetch frequencies; success seeds nil to skip fallback queries.
++	// Post-batch trips (interlined, DUPLICATED) fall back per-trip.
++	freqMap := make(map[string][]gtfsdb.Frequency)
++	if len(fetchedTrips) > 0 {
++		tripIDsForFreq := make([]string, 0, len(fetchedTrips))
++		for _, trip := range fetchedTrips {
++			tripIDsForFreq = append(tripIDsForFreq, trip.ID)
++		}
++		var freqErr error
++		freqMap, freqErr = api.fetchFrequenciesForTrips(ctx, tripIDsForFreq)
++		if freqErr != nil {
++			api.serverErrorResponse(w, r, freqErr)
++			return
++		}
++	}
++
+ 	blockTripForRoute, err := api.buildBlockTripForRoute(ctx, fetchedTrips, routeID, serviceIDs, prevServiceIDs)
+ 	if err != nil {
+ 		api.serverErrorResponse(w, r, err)
+@@ -386,10 +438,31 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 		// trip. Per spec, schedule.stopTimes is "scheduled stop times for this
+ 		// trip" and schedule.previousTripId is "the preceding trip in this
+ 		// vehicle's block" â€” both relative to the entry's trip identity.
++		activeResolver, ok := serviceDatesByAgency[activeAgencyID]
++		if !ok {
++			api.Logger.Warn("trips-for-route: missing service date resolver for active agency", "agency_id", activeAgencyID)
++			continue
++		}
++		activeMidnight := activeResolver.Resolve(fetchedTrip)
++
++		entryLocation := currentLocation
++		if loc, ok := agencyLocations[entryAgencyID]; ok {
++			entryLocation = loc
++		}
++		entryMidnight := serviceDateMidnight(currentTime, entryLocation)
++		if entryTrip, ok := tripsByID[entryTripID]; ok {
++			entryResolver, ok := serviceDatesByAgency[entryAgencyID]
++			if !ok {
++				api.Logger.Warn("trips-for-route: missing service date resolver for entry agency", "agency_id", entryAgencyID)
++				continue
++			}
++			entryMidnight = entryResolver.Resolve(entryTrip)
++		}
++
+ 		var schedule *models.TripsSchedule
+ 		if includeSchedule {
+ 			var schedErr error
+-			schedule, schedErr = api.buildScheduleForTrip(ctx, entryTripID, entryAgencyID, currentTime, currentLocation)
++			schedule, schedErr = api.buildScheduleForTrip(ctx, entryTripID, entryAgencyID, entryMidnight, entryLocation, freqMap)
+ 			if schedErr != nil {
+ 				api.serverErrorResponse(w, r, schedErr)
+ 				return
+@@ -398,25 +471,29 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 			collectStopIDsFromSchedule(schedule, stopIDsMap)
+ 		}
+ 
+-		serviceDate := serviceDates.Resolve(fetchedTrip)
+-
+ 		// Build status from the active trip (tripID). Per spec,
+ 		// status.activeTripId is "the trip the vehicle is currently executing."
+ 		var status *models.TripStatus
+ 		if includeStatus {
+ 			var statusErr error
+-			status, _, statusErr = api.BuildTripStatus(ctx, activeAgencyID, tripID, nil, serviceDate, currentTime)
++			status, _, statusErr = api.BuildTripStatus(ctx, activeAgencyID, tripID, nil, activeMidnight, currentTime, freqMap)
+ 			if statusErr != nil {
+ 				api.Logger.Warn("BuildTripStatus failed", "trip_id", tripID, "error", statusErr)
+ 				status = nil
+ 			}
+ 		}
+ 
++		frequency, freqErr := api.frequencyForEntry(ctx, freqMap, entryTripID, entryMidnight, currentTime)
++		if freqErr != nil {
++			api.serverErrorResponse(w, r, freqErr)
++			return
++		}
++
+ 		entry := models.TripsForRouteListEntry{
+-			Frequency:    nil,
++			Frequency:    frequency,
+ 			Schedule:     schedule,
+ 			Status:       status,
+-			ServiceDate:  serviceDate.UnixMilli(),
++			ServiceDate:  entryMidnight.UnixMilli(),
+ 			SituationIds: situations.addRefs(api.tripSituationRefs(ctx, entryTripID, tripsByID, routeAgencyMap)),
+ 			TripId:       utils.FormCombinedID(entryAgencyID, entryTripID),
+ 		}
+@@ -441,10 +518,8 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 		dupTripID := vehicle.Trip.ID.ID
+ 
+ 		baseTripID, baseTrip := api.resolveDuplicatedBaseTrip(ctx, dupTripID)
+-
+ 		// A DUPLICATED trip with no static counterpart leaves baseTrip zeroed,
+ 		// which the resolver reports as the query day.
+-		serviceDate := serviceDates.Resolve(baseTrip)
+ 
+ 		// Index the base trip before the situation lookup below: an unindexed
+ 		// trip sends tripSituationRefs back to the database for the record
+@@ -457,10 +532,19 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 			}
+ 		}
+ 
++		dupLocation := currentLocation
++		if loc, ok := agencyLocations[agencyID]; ok {
++			dupLocation = loc
++		}
++		dupMidnight := serviceDateMidnight(currentTime, dupLocation)
++		if resolver, ok := serviceDatesByAgency[agencyID]; ok {
++			dupMidnight = resolver.Resolve(baseTrip)
++		}
++
+ 		var schedule *models.TripsSchedule
+ 		if includeSchedule {
+ 			var schedErr error
+-			schedule, schedErr = api.buildScheduleForTrip(ctx, baseTripID, agencyID, currentTime, currentLocation)
++			schedule, schedErr = api.buildScheduleForTrip(ctx, baseTripID, agencyID, dupMidnight, dupLocation, freqMap)
+ 			if schedErr != nil {
+ 				api.serverErrorResponse(w, r, schedErr)
+ 				return
+@@ -471,18 +555,24 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 		var status *models.TripStatus
+ 		if includeStatus {
+ 			var statusErr error
+-			status, _, statusErr = api.BuildTripStatus(ctx, agencyID, baseTripID, &vehicle, serviceDate, currentTime)
++			status, _, statusErr = api.BuildTripStatus(ctx, agencyID, baseTripID, &vehicle, dupMidnight, currentTime, freqMap)
+ 			if statusErr != nil {
+ 				api.Logger.Warn("BuildTripStatus failed for DUPLICATED trip", "trip_id", baseTripID, "error", statusErr)
+ 				status = nil
+ 			}
+ 		}
+ 
++		frequency, freqErr := api.frequencyForEntry(ctx, freqMap, baseTripID, dupMidnight, currentTime)
++		if freqErr != nil {
++			api.serverErrorResponse(w, r, freqErr)
++			return
++		}
++
+ 		entry := models.TripsForRouteListEntry{
+-			Frequency:    nil,
++			Frequency:    frequency,
+ 			Schedule:     schedule,
+ 			Status:       status,
+-			ServiceDate:  serviceDate.UnixMilli(),
++			ServiceDate:  dupMidnight.UnixMilli(),
+ 			SituationIds: situations.addRefs(api.tripSituationRefs(ctx, baseTripID, tripsByID, routeAgencyMap)),
+ 			TripId:       utils.FormCombinedID(agencyID, dupTripID),
+ 		}
+@@ -698,6 +788,17 @@ func tripsByBlockIDsRowToTrip(row gtfsdb.GetTripsByBlockIDsRow) gtfsdb.Trip {
+ 	}
+ }
+ 
++// tripServiceDayMidnight returns midnight of the trip's service day in the
++// agency's timezone. Overnight trips running under yesterday's (request-frame)
++// service get that date; all other trips get the request's date.
++func tripServiceDayMidnight(currentTime time.Time, trip *gtfsdb.Trip, agencyLocation *time.Location, serviceIDs, prevServiceIDs []string) time.Time {
++	serviceDate := currentTime
++	if !slices.Contains(serviceIDs, trip.ServiceID) && slices.Contains(prevServiceIDs, trip.ServiceID) {
++		serviceDate = currentTime.AddDate(0, 0, -1)
++	}
++	return time.Date(serviceDate.Year(), serviceDate.Month(), serviceDate.Day(), 0, 0, 0, 0, agencyLocation)
++}
++
+ func collectStopIDsFromSchedule(schedule *models.TripsSchedule, stopIDsMap map[string]string) {
+ 	if schedule == nil {
+ 		return
+diff --git a/internal/restapi/trips_for_route_handler_test.go b/internal/restapi/trips_for_route_handler_test.go
+index 5e425f98..e7b27d59 100644
+--- a/internal/restapi/trips_for_route_handler_test.go
++++ b/internal/restapi/trips_for_route_handler_test.go
+@@ -207,6 +207,70 @@ func overnightInterlineFiles() map[string]string {
+ 	}
+ }
+ 
++// crossAgencyInterlineFiles models an interlined block whose active trip
++// belongs to a second agency in a different timezone: at 00:30 UTC on
++// 2025-06-13 (17:30 PDT on 2025-06-12), the active trip tfr-xb runs under
++// yesterday's service in America/Los_Angeles while the queried-route trip
++// tfr-xa runs under today's service in UTC.
++func crossAgencyInterlineFiles() map[string]string {
++	return map[string]string{
++		"agency.txt": "agency_id,agency_name,agency_url,agency_timezone\n" +
++			tripsForRouteAgencyID + ",Test Agency,http://example.com,UTC\n" +
++			"tfr-agency-b,Other Agency,http://example.com,America/Los_Angeles\n",
++		"routes.txt": "route_id,agency_id,route_short_name,route_long_name,route_type\n" +
++			tripsForRouteRouteID + "," + tripsForRouteAgencyID + ",TR,Test Route,3\n" +
++			"tfr-route-otr,tfr-agency-b,OR,Other Route,3\n",
++		"calendar.txt": "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n" +
++			"tfr-svc-yest,0,0,0,1,0,0,0,20250612,20250612\n" +
++			"tfr-svc-today,0,0,0,0,1,0,0,20250613,20250613\n",
++		"stops.txt": "stop_id,stop_name,stop_lat,stop_lon\n" +
++			tripsForRouteStop1ID + ",Stop One,37.7749,-122.4194\n" +
++			tripsForRouteStop2ID + ",Stop Two,37.7849,-122.4094\n",
++		"trips.txt": "route_id,service_id,trip_id,trip_headsign,direction_id,block_id\n" +
++			tripsForRouteRouteID + ",tfr-svc-today,tfr-xa,Headsign A,0,tfr-xblock\n" +
++			"tfr-route-otr,tfr-svc-yest,tfr-xb,Headsign B,0,tfr-xblock\n",
++		"stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n" +
++			"tfr-xa,00:05:00,00:05:00," + tripsForRouteStop1ID + ",1\n" +
++			"tfr-xa,00:25:00,00:25:00," + tripsForRouteStop2ID + ",2\n" +
++			"tfr-xb,24:00:00,24:00:00," + tripsForRouteStop1ID + ",1\n" +
++			"tfr-xb,25:00:00,25:00:00," + tripsForRouteStop2ID + ",2\n",
++	}
++}
++
++// TestTripsForRouteHandler_CrossAgencyInterlinedBlock verifies that an entry
++// whose active trip belongs to a different agency in another timezone uses
++// the per-agency service day: the entry's serviceDate and schedule timezone
++// follow the queried-route trip's agency (UTC, 2025-06-13), while the
++// status's serviceDate follows the active trip's agency (America/Los_Angeles,
++// 2025-06-12).
++func TestTripsForRouteHandler_CrossAgencyInterlinedBlock(t *testing.T) {
++	api := createTestApiWithGTFSFixture(t, clock.NewMockClock(afterMidnightClock),
++		"trips-for-route-cross-agency.zip", crossAgencyInterlineFiles())
++	combinedRouteID := utils.FormCombinedID(tripsForRouteAgencyID, tripsForRouteRouteID)
++	timeMs := afterMidnightClock.UnixMilli()
++	url := fmt.Sprintf("/api/where/trips-for-route/%s.json?key=TEST&includeSchedule=true&includeStatus=true&time=%d",
++		combinedRouteID, timeMs)
++
++	resp, model := callAPIHandler[TripsForRouteResponse](t, api, url)
++
++	require.Equal(t, http.StatusOK, resp.StatusCode)
++	require.Equal(t, http.StatusOK, model.Code)
++	require.Len(t, model.Data.List, 1)
++
++	entry := model.Data.List[0]
++	expectedTripID := utils.FormCombinedID(tripsForRouteAgencyID, "tfr-xa")
++	assert.Equal(t, expectedTripID, entry.TripId)
++	require.NotNil(t, entry.Schedule)
++	assert.Equal(t, "UTC", entry.Schedule.TimeZone)
++	assert.Equal(t, time.Date(2025, 6, 13, 0, 0, 0, 0, time.UTC).UnixMilli(), entry.ServiceDate)
++	require.NotNil(t, entry.Status)
++	expectedActiveTripID := utils.FormCombinedID("tfr-agency-b", "tfr-xb")
++	assert.Equal(t, expectedActiveTripID, entry.Status.ActiveTripID)
++	laLoc, err := time.LoadLocation("America/Los_Angeles")
++	require.NoError(t, err)
++	assert.Equal(t, time.Date(2025, 6, 12, 0, 0, 0, 0, laLoc).UnixMilli(), entry.Status.ServiceDate.UnixMilli())
++}
++
+ func loopingRouteFiles() map[string]string {
+ 	return map[string]string{
+ 		"agency.txt": "agency_id,agency_name,agency_url,agency_timezone\n" +
+@@ -485,6 +549,72 @@ func TestTripsForRouteHandler_DifferentRoutes(t *testing.T) {
+ 	}
+ }
+ 
++// TestTripsForRouteWithFrequency verifies active trips in the list carry
++// their frequency window (both exact_times variants), on the entry and on the
++// schedule, while non-frequency trips leave the field null.
++func TestTripsForRouteWithFrequency(t *testing.T) {
++	api := createTestApiWithFrequencyData(t)
++	defer api.Shutdown()
++
++	combinedRouteID := utils.FormCombinedID(freqAgencyID, freqRouteID)
++
++	// Query at 06:05 UTC: active window [05:35, 06:15] surfaces exactly the
++	// two frequency trips (06:00-06:10 and 06:00-06:15); freq-normal-trip
++	// departs 08:00 and is outside the window.
++	url := fmt.Sprintf("/api/where/trips-for-route/%s.json?key=TEST&includeSchedule=true&time=%d",
++		combinedRouteID, time.Date(2025, 6, 12, 6, 5, 0, 0, time.UTC).UnixMilli())
++	resp, model := callAPIHandler[TripsForRouteResponse](t, api, url)
++
++	require.Equal(t, http.StatusOK, resp.StatusCode)
++	require.Equal(t, http.StatusOK, model.Code)
++	require.Len(t, model.Data.List, 2, "window [05:35, 06:15] should surface exactly the two frequency trips")
++
++	for _, entry := range model.Data.List {
++		_, entryTripID, err := utils.ExtractAgencyIDAndCodeID(entry.TripId)
++		require.NoError(t, err)
++
++		require.NotNil(t, entry.Frequency, "frequency trip %q must carry frequency data", entryTripID)
++
++		exactTimes := 0
++		headway := 600 * time.Second
++		if entryTripID == freqExactTripID {
++			exactTimes = 1
++			headway = 1800 * time.Second
++		}
++		assert.Equal(t, exactTimes, entry.Frequency.ExactTimes)
++		assert.Equal(t, headway, entry.Frequency.Headway.Duration)
++
++		// Fixture windows span 06:00-09:00 UTC on the 2025-06-12 service date;
++		// compare instants (millis) because ModelTime round-trips in time.Local.
++		assert.Equal(t, time.Date(2025, 6, 12, 6, 0, 0, 0, time.UTC).UnixMilli(), entry.Frequency.StartTime.UnixMilli())
++		assert.Equal(t, time.Date(2025, 6, 12, 9, 0, 0, 0, time.UTC).UnixMilli(), entry.Frequency.EndTime.UnixMilli())
++
++		require.NotNil(t, entry.Schedule, "schedule should be present when includeSchedule=true")
++		require.NotNil(t, entry.Schedule.Frequency, "schedule for frequency trip %q must carry frequency data", entryTripID)
++		assert.Equal(t, entry.Frequency.StartTime.UnixMilli(), entry.Schedule.Frequency.StartTime.UnixMilli())
++		assert.Equal(t, entry.Frequency.EndTime.UnixMilli(), entry.Schedule.Frequency.EndTime.UnixMilli())
++	}
++
++	// Query at 08:05 UTC: active window [07:35, 08:15] surfaces only
++	// freq-normal-trip, which must keep frequency null on both entry and
++	// schedule.
++	url = fmt.Sprintf("/api/where/trips-for-route/%s.json?key=TEST&includeSchedule=true&time=%d",
++		combinedRouteID, time.Date(2025, 6, 12, 8, 5, 0, 0, time.UTC).UnixMilli())
++	resp, model = callAPIHandler[TripsForRouteResponse](t, api, url)
++
++	require.Equal(t, http.StatusOK, resp.StatusCode)
++	require.Equal(t, http.StatusOK, model.Code)
++	require.Len(t, model.Data.List, 1, "window [07:35, 08:15] should surface only freq-normal-trip")
++
++	entry := model.Data.List[0]
++	_, entryTripID, err := utils.ExtractAgencyIDAndCodeID(entry.TripId)
++	require.NoError(t, err)
++	assert.Equal(t, freqNormalTripD, entryTripID)
++	assert.Nil(t, entry.Frequency, "non-frequency trip must not carry frequency data")
++	require.NotNil(t, entry.Schedule)
++	assert.Nil(t, entry.Schedule.Frequency, "schedule for non-frequency trip must not carry frequency data")
++}
++
+ // TestTripsForRouteHandler_TimeOmitted verifies that omitting the time parameter
+ // correctly falls back to the injected api.Clock to resolve active trips.
+ func TestTripsForRouteHandler_TimeOmitted(t *testing.T) {
+@@ -1086,9 +1216,14 @@ func TestTripsForRouteHandler_OvernightInterlinedBlock(t *testing.T) {
+ 	entry := model.Data.List[0]
+ 	expectedTripID := utils.FormCombinedID(tripsForRouteAgencyID, "tfr-yest-a")
+ 	assert.Equal(t, expectedTripID, entry.TripId)
++	// Yesterday's trips belong to the previous service day, so the service
++	// date must be 2025-06-12, not today's.
++	expectedServiceDate := time.Date(2025, 6, 12, 0, 0, 0, 0, time.UTC).UnixMilli()
++	assert.Equal(t, expectedServiceDate, entry.ServiceDate)
+ 	require.NotNil(t, entry.Status)
+ 	expectedActiveTripID := utils.FormCombinedID(tripsForRouteAgencyID, "tfr-yest-b")
+ 	assert.Equal(t, expectedActiveTripID, entry.Status.ActiveTripID)
++	assert.Equal(t, expectedServiceDate, entry.Status.ServiceDate.UnixMilli())
+ }
+ 
+ // TestTripsForRouteHandler_LoopingRouteBlock verifies that when a block visits
+diff --git a/internal/restapi/trips_helper.go b/internal/restapi/trips_helper.go
+index 022c8787..0642bffb 100644
+--- a/internal/restapi/trips_helper.go
++++ b/internal/restapi/trips_helper.go
+@@ -44,12 +44,15 @@ type tripStatusExtras struct {
+ // trip's situations should reuse those instead of resolving them a second time â€”
+ // the amplification matters for the plural arrivals-and-departures endpoint
+ // which is called per-arrival-row across wide time windows.
++//
++// freqMap supplies batch-fetched frequency rows, avoiding a per-call query.
+ func (api *RestAPI) BuildTripStatus(
+ 	ctx context.Context,
+ 	agencyID, tripID string,
+ 	vehicle *gtfs.Vehicle,
+ 	serviceDate time.Time,
+ 	currentTime time.Time,
++	freqMap map[string][]gtfsdb.Frequency,
+ ) (*models.TripStatus, *tripStatusExtras, error) {
+ 	if vehicle == nil {
+ 		vehicle = api.GtfsManager.GetVehicleForTrip(ctx, tripID)
+@@ -93,16 +96,8 @@ func (api *RestAPI) BuildTripStatus(
+ 	}
+ 	api.BuildVehicleStatus(ctx, vehicle, tripID, agencyID, status, currentTime)
+ 
+-	// CANCELED trips are no longer running there is no active position or schedule
+-	// to report. Return immediately with the cancellation status and skip all stop-time
+-	// and shape calculations, which are meaningless for a trip that is not operating.
+-	// Predicted is true because the cancellation itself is real-time information.
+-	if status.Status == "CANCELED" {
+-		status.Predicted = vehicle != nil && !defaultStaleDetector.Check(vehicle, currentTime)
+-		status.Scheduled = !status.Predicted
+-		return status, extras, nil
+-	}
+-
++	// Frequencies are reported even for CANCELED trips, so resolve the DB
++	// trip ID before the early-return.
+ 	_, activeTripRawID, err := utils.ExtractAgencyIDAndCodeID(status.ActiveTripID)
+ 	if err != nil {
+ 		return status, extras, err
+@@ -125,6 +120,24 @@ func (api *RestAPI) BuildTripStatus(
+ 		}
+ 	}
+ 
++	// Reuse the batch-fetched frequencies when supplied; single-entry handlers
++	// fall back to a per-trip query.
++	frequency, freqErr := api.frequencyForEntry(ctx, freqMap, dbTripID, serviceDate, currentTime)
++	if freqErr != nil {
++		return status, extras, freqErr
++	}
++	status.Frequency = frequency
++
++	// CANCELED trips are no longer running there is no active position or schedule
++	// to report. Return immediately with the cancellation status and skip all stop-time
++	// and shape calculations, which are meaningless for a trip that is not operating.
++	// Predicted is true because the cancellation itself is real-time information.
++	if status.Status == "CANCELED" {
++		status.Predicted = vehicle != nil && !defaultStaleDetector.Check(vehicle, currentTime)
++		status.Scheduled = !status.Predicted
++		return status, extras, nil
++	}
++
+ 	// Mirror Java's applyTripUpdatesToRecord: iterate all block trips in
+ 	// start-time order; last trip-level delay wins (Java overwrites
+ 	// best.scheduleDeviation unconditionally each time a trip-level delay is
+@@ -152,6 +165,7 @@ func (api *RestAPI) BuildTripStatus(
+ 			slog.String("trip_id", dbTripID),
+ 			slog.String("error", err.Error()))
+ 	}
++
+ 	if err == nil && len(stopTimes) > 0 {
+ 		stopTimesPtrs := make([]*gtfsdb.StopTime, len(stopTimes))
+ 		for i := range stopTimes {
+@@ -366,6 +380,63 @@ func (api *RestAPI) BuildTripStatus(
+ 	return status, extras, nil
+ }
+ 
++// frequencyForEntry returns the frequency row whose window contains
++// currentTime (earliest when none matches), from freqMap or a per-trip
++// fallback query. Empty results yield nil; DB errors propagate.
++func (api *RestAPI) frequencyForEntry(ctx context.Context, freqMap map[string][]gtfsdb.Frequency, tripID string, serviceDate, currentTime time.Time) (*models.Frequency, error) {
++	freqs, ok := freqMap[tripID]
++	if !ok {
++		rows, err := api.GtfsManager.GtfsDB.Queries.GetFrequenciesForTrip(ctx, tripID)
++		if err != nil {
++			return nil, err
++		}
++		freqs = rows
++		if freqMap != nil {
++			freqMap[tripID] = rows
++		}
++	}
++	if len(freqs) == 0 {
++		return nil, nil
++	}
++	converted := models.NewFrequencyFromDB(*selectFrequency(freqs, serviceDate, currentTime), serviceDate)
++	return &converted, nil
++}
++
++// selectFrequency returns the row whose [start_time, end_time) window
++// contains effectiveTime, falling back to freqs[0].
++func selectFrequency(freqs []gtfsdb.Frequency, serviceDate, effectiveTime time.Time) *gtfsdb.Frequency {
++	midnight := time.Date(serviceDate.Year(), serviceDate.Month(), serviceDate.Day(),
++		0, 0, 0, 0, serviceDate.Location())
++	for i := range freqs {
++		start := midnight.Add(time.Duration(freqs[i].StartTime))
++		end := midnight.Add(time.Duration(freqs[i].EndTime))
++		if !effectiveTime.Before(start) && effectiveTime.Before(end) {
++			return &freqs[i]
++		}
++	}
++	return &freqs[0]
++}
++
++// fetchFrequenciesForTrips batch-fetches frequency rows for tripIDs, batching
++// under SQLite's bind-variable limit. Seeds the map only after the query
++// succeeds; errors propagate.
++func (api *RestAPI) fetchFrequenciesForTrips(ctx context.Context, tripIDs []string) (map[string][]gtfsdb.Frequency, error) {
++	freqMap := make(map[string][]gtfsdb.Frequency, len(tripIDs))
++	allFreqs, err := queryInBatches(ctx, tripIDs, api.GtfsManager.GtfsDB.Queries.GetFrequenciesForTrips)
++	if err != nil {
++		return nil, err
++	}
++	for _, tripID := range tripIDs {
++		freqMap[tripID] = nil
++	}
++	for _, f := range allFreqs {
++		freqMap[f.TripID] = append(freqMap[f.TripID], f)
++	}
++	return freqMap, nil
++}
++
++// BuildTripSchedule returns the trip's schedule (stop times, block
++// neighbors, frequency) resolved around serviceDate in the agency's timezone.
+ func (api *RestAPI) BuildTripSchedule(ctx context.Context, agencyID string, serviceDate time.Time, trip *gtfsdb.Trip, loc *time.Location) (*models.Schedule, error) {
+ 	stopTimes, err := api.GtfsManager.GtfsDB.Queries.GetStopTimesForTrip(ctx, trip.ID)
+ 	if err != nil {
+@@ -402,10 +473,21 @@ func (api *RestAPI) BuildTripSchedule(ctx context.Context, agencyID string, serv
+ 
+ 	stopTimesVals := api.calculateBatchStopDistances(stopTimes, shapePoints, stopCoords, agencyID)
+ 
++	// Populate frequency data for the schedule sub-object.
++	var scheduleFrequency *models.Frequency
++	freqRows, freqErr := api.GtfsManager.GtfsDB.Queries.GetFrequenciesForTrip(ctx, trip.ID)
++	if freqErr != nil {
++		return nil, freqErr
++	}
++	if len(freqRows) > 0 {
++		converted := models.NewFrequencyFromDB(*selectFrequency(freqRows, serviceDate, serviceDate), serviceDate)
++		scheduleFrequency = &converted
++	}
++
+ 	return &models.Schedule{
+ 		StopTimes:      stopTimesVals,
+ 		TimeZone:       loc.String(),
+-		Frequency:      nil,
++		Frequency:      scheduleFrequency,
+ 		NextTripID:     nextTripID,
+ 		PreviousTripID: previousTripID,
+ 	}, nil
+@@ -1293,22 +1375,27 @@ func serviceIDSet(serviceIDs []string) map[string]struct{} {
+ // a second query with the same service-ID list, the way the block lookup in
+ // trips-for-location does. A lookup failure is not fatal â€” that day comes back
+ // empty.
+-func (api *RestAPI) serviceIDsForDays(ctx context.Context, queryDayMidnight time.Time) serviceIDsByDay {
+-	return serviceIDsByDay{
+-		QueryDay:    api.activeServiceIDsForDate(ctx, queryDayMidnight),
+-		PreviousDay: api.activeServiceIDsForDate(ctx, queryDayMidnight.AddDate(0, 0, -1)),
++func (api *RestAPI) serviceIDsForDays(ctx context.Context, queryDayMidnight time.Time) (serviceIDsByDay, error) {
++	queryDay, err := api.activeServiceIDsForDate(ctx, queryDayMidnight)
++	if err != nil {
++		return serviceIDsByDay{}, err
+ 	}
++	prevDay, err := api.activeServiceIDsForDate(ctx, queryDayMidnight.AddDate(0, 0, -1))
++	if err != nil {
++		return serviceIDsByDay{}, err
++	}
++	return serviceIDsByDay{
++		QueryDay:    queryDay,
++		PreviousDay: prevDay,
++	}, nil
+ }
+ 
+-func (api *RestAPI) activeServiceIDsForDate(ctx context.Context, day time.Time) []string {
++func (api *RestAPI) activeServiceIDsForDate(ctx context.Context, day time.Time) ([]string, error) {
+ 	serviceIDs, err := api.GtfsManager.GtfsDB.Queries.GetActiveServiceIDsForDate(ctx, day.Format("20060102"))
+ 	if err != nil {
+-		api.Logger.Warn("failed to fetch active service IDs for service date resolution",
+-			"date", day.Format("20060102"), "error", err)
+-		return nil
++		return nil, err
+ 	}
+-
+-	return serviceIDs
++	return serviceIDs, nil
+ }
+ 
+ // Resolve returns midnight of the service date trip belongs to.
+diff --git a/internal/restapi/trips_helper_test.go b/internal/restapi/trips_helper_test.go
+index 6fa438dd..3d59eddb 100644
+--- a/internal/restapi/trips_helper_test.go
++++ b/internal/restapi/trips_helper_test.go
+@@ -363,7 +363,7 @@ func TestBuildTripStatus_VehicleWithPosition_FindsStops(t *testing.T) {
+ 		},
+ 	})
+ 
+-	status, _, err := api.BuildTripStatus(ctx, agencyID, tripID, nil, serviceDate, currentTime)
++	status, _, err := api.BuildTripStatus(ctx, agencyID, tripID, nil, serviceDate, currentTime, nil)
+ 	require.NoError(t, err)
+ 	require.NotNil(t, status)
+ 
+@@ -403,7 +403,7 @@ func TestBuildTripStatus_ScheduleDeviation_SetsPredicted(t *testing.T) {
+ 	api.GtfsManager.MockAddRoute(routeID, agencyID, routeID)
+ 	api.GtfsManager.MockAddTrip(tripID, agencyID, routeID)
+ 
+-	status, _, err := api.BuildTripStatus(ctx, agencyID, tripID, nil, serviceDate, currentTime)
++	status, _, err := api.BuildTripStatus(ctx, agencyID, tripID, nil, serviceDate, currentTime, nil)
+ 	require.NoError(t, err)
+ 	require.NotNil(t, status)
+ 
+@@ -430,7 +430,7 @@ func TestBuildTripStatus_NoRealtimeData_SetsScheduled(t *testing.T) {
+ 	currentTime := serviceDate.Add(8 * time.Hour)
+ 
+ 	// No vehicle, no trip updates â€” purely scheduled
+-	status, _, err := api.BuildTripStatus(ctx, agencyID, tripID, nil, serviceDate, currentTime)
++	status, _, err := api.BuildTripStatus(ctx, agencyID, tripID, nil, serviceDate, currentTime, nil)
+ 	require.NoError(t, err)
+ 	require.NotNil(t, status)
+ 
+@@ -509,7 +509,7 @@ func TestBuildTripStatus_ShapeData_ComputesDistanceAlongTrip(t *testing.T) {
+ 		},
+ 	})
+ 
+-	status, _, err := api.BuildTripStatus(ctx, agencyID, tripID, nil, serviceDate, currentTime)
++	status, _, err := api.BuildTripStatus(ctx, agencyID, tripID, nil, serviceDate, currentTime, nil)
+ 	require.NoError(t, err)
+ 	require.NotNil(t, status)
+ 
+@@ -596,7 +596,7 @@ func TestBuildTripStatus_ShapeData_ProjectionFailureFallsBackToScheduled(t *test
+ 		},
+ 	})
+ 
+-	status, _, err := api.BuildTripStatus(ctx, agencyID, tripID, nil, serviceDate, currentTime)
++	status, _, err := api.BuildTripStatus(ctx, agencyID, tripID, nil, serviceDate, currentTime, nil)
+ 	require.NoError(t, err)
+ 	require.NotNil(t, status)
+ 
+@@ -630,7 +630,7 @@ func TestBuildTripStatus_VehicleIDFormat(t *testing.T) {
+ 	ctx := context.Background()
+ 
+ 	currentTime := time.Now()
+-	model, _, err := api.BuildTripStatus(ctx, agencyID, tripID, nil, currentTime, currentTime)
++	model, _, err := api.BuildTripStatus(ctx, agencyID, tripID, nil, currentTime, currentTime, nil)
+ 
+ 	assert.NoError(t, err)
+ 	assert.NotEmpty(t, model)
+@@ -1001,7 +1001,7 @@ func TestBuildTripStatus_VehicleWithStopID_FindsStops(t *testing.T) {
+ 		CurrentStatus: &stoppedAt,
+ 	})
+ 
+-	status, _, err := api.BuildTripStatus(ctx, agencyID, tripID, nil, serviceDate, currentTime)
++	status, _, err := api.BuildTripStatus(ctx, agencyID, tripID, nil, serviceDate, currentTime, nil)
+ 	require.NoError(t, err)
+ 	require.NotNil(t, status)
+ 
+@@ -1069,7 +1069,7 @@ func TestBuildTripStatus_PreResolvedVehicle(t *testing.T) {
+ 	arrivalSeconds := utils.EffectiveStopTimeSeconds(stopTimes[0].ArrivalTime, stopTimes[0].DepartureTime)
+ 	currentTime := serviceDate.Add(time.Duration(arrivalSeconds) * time.Second)
+ 
+-	status, _, err := api.BuildTripStatus(ctx, agencyID, tripID, vehicle, serviceDate, currentTime)
++	status, _, err := api.BuildTripStatus(ctx, agencyID, tripID, vehicle, serviceDate, currentTime, nil)
+ 	require.NoError(t, err)
+ 	require.NotNil(t, status)
+ 
+@@ -1113,7 +1113,7 @@ func TestBuildTripStatus_CanceledTrip(t *testing.T) {
+ 		},
+ 	}
+ 
+-	status, _, err := api.BuildTripStatus(ctx, agencyID, tripID, vehicle, serviceDate, currentTime)
++	status, _, err := api.BuildTripStatus(ctx, agencyID, tripID, vehicle, serviceDate, currentTime, nil)
+ 	require.NoError(t, err)
+ 	require.NotNil(t, status)
+ 
+@@ -1199,7 +1199,7 @@ func TestBuildTripStatus_CanceledTrip_BlockTripSequence(t *testing.T) {
+ 		},
+ 	}
+ 
+-	status, _, err := api.BuildTripStatus(ctx, agencyID, tripID, vehicle, serviceDate, currentTime)
++	status, _, err := api.BuildTripStatus(ctx, agencyID, tripID, vehicle, serviceDate, currentTime, nil)
+ 	require.NoError(t, err)
+ 	require.NotNil(t, status)
+ 	require.Equal(t, "CANCELED", status.Status)
+@@ -2172,3 +2172,90 @@ func testTripIDs(trips []gtfsdb.Trip) []string {
+ 	}
+ 	return ids
+ }
++
++// TestFrequencyForEntry_FallbackQueryAndCaching verifies that a trip missing
++// from freqMap is resolved with a per-trip query whose result is then cached,
++// so repeat lookups hit the map instead of the database.
++func TestFrequencyForEntry_FallbackQueryAndCaching(t *testing.T) {
++	api := createTestApiWithFrequencyData(t)
++	ctx := context.Background()
++	serviceDate := time.Date(2025, 6, 12, 0, 0, 0, 0, time.UTC)
++
++	freqMap := make(map[string][]gtfsdb.Frequency)
++
++	freq, err := api.frequencyForEntry(ctx, freqMap, freqTripID, serviceDate, serviceDate)
++	require.NoError(t, err)
++	require.NotNil(t, freq, "freq-trip has a frequency entry in the fixture")
++	assert.Equal(t, time.Date(2025, 6, 12, 6, 0, 0, 0, time.UTC), freq.StartTime.Time, "earliest start_time row is selected")
++	assert.Equal(t, time.Duration(600)*time.Second, freq.Headway.Duration)
++
++	require.Contains(t, freqMap, freqTripID, "fallback query result must be cached")
++
++	cached, err := api.frequencyForEntry(ctx, freqMap, freqTripID, serviceDate, serviceDate)
++	require.NoError(t, err)
++	require.NotNil(t, cached)
++	assert.Equal(t, freq, cached, "repeat lookup must reuse the cached row")
++}
++
++// TestFrequencyForEntry_NoFrequencyRowsCachedAsEmpty verifies that trips
++// without any frequency entry are cached as empty so later lookups skip the
++// per-trip query and still return a nil frequency.
++func TestFrequencyForEntry_NoFrequencyRowsCachedAsEmpty(t *testing.T) {
++	api := createTestApiWithFrequencyData(t)
++	ctx := context.Background()
++	serviceDate := time.Date(2025, 6, 12, 0, 0, 0, 0, time.UTC)
++
++	freqMap := make(map[string][]gtfsdb.Frequency)
++
++	freq, err := api.frequencyForEntry(ctx, freqMap, freqNormalTripD, serviceDate, serviceDate)
++	require.NoError(t, err)
++	assert.Nil(t, freq, "trip without a frequency entry yields nil")
++
++	require.Contains(t, freqMap, freqNormalTripD, "empty result must be cached as empty")
++	assert.Empty(t, freqMap[freqNormalTripD])
++}
++
++// TestFrequencyForEntry_NilFreqMapSkipsCaching verifies that a nil freqMap
++// falls back to the per-trip query without attempting to cache the result.
++func TestFrequencyForEntry_NilFreqMapSkipsCaching(t *testing.T) {
++	api := createTestApiWithFrequencyData(t)
++	ctx := context.Background()
++	serviceDate := time.Date(2025, 6, 12, 0, 0, 0, 0, time.UTC)
++
++	freq, err := api.frequencyForEntry(ctx, nil, freqTripID, serviceDate, serviceDate)
++	require.NoError(t, err)
++	require.NotNil(t, freq)
++}
++
++// TestFrequencyForEntry_DBErrorPropagates verifies that a failed per-trip
++// query bubbles the error up instead of swallowing it.
++func TestFrequencyForEntry_DBErrorPropagates(t *testing.T) {
++	api := createTestApiWithFrequencyData(t)
++	ctx := context.Background()
++	serviceDate := time.Date(2025, 6, 12, 0, 0, 0, 0, time.UTC)
++
++	require.NoError(t, api.GtfsManager.GtfsDB.DB.Close(), "closing the fixture DB simulates a query failure")
++
++	freqMap := make(map[string][]gtfsdb.Frequency)
++	freq, err := api.frequencyForEntry(ctx, freqMap, freqTripID, serviceDate, serviceDate)
++	require.Error(t, err, "a closed database must surface the query error")
++	assert.Nil(t, freq)
++	assert.NotContains(t, freqMap, freqTripID, "failed lookups must not be cached")
++}
++
++// TestSelectFrequency verifies window-based selection with fallback to the
++// first row.
++func TestSelectFrequency(t *testing.T) {
++	freqs := []gtfsdb.Frequency{
++		{TripID: "t", StartTime: int64(6 * time.Hour), EndTime: int64(9 * time.Hour), HeadwaySecs: 600},
++		{TripID: "t", StartTime: int64(9 * time.Hour), EndTime: int64(12 * time.Hour), HeadwaySecs: 900},
++	}
++	serviceDate := time.Date(2025, 6, 12, 0, 0, 0, 0, time.UTC)
++
++	assert.Equal(t, &freqs[1], selectFrequency(freqs, serviceDate, serviceDate.Add(10*time.Hour)),
++		"the window containing the effective time wins")
++	assert.Equal(t, &freqs[0], selectFrequency(freqs, serviceDate, serviceDate.Add(12*time.Hour)),
++		"end_time is exclusive; no match falls back to the first row")
++	assert.Equal(t, &freqs[0], selectFrequency(freqs, serviceDate, serviceDate.Add(3*time.Hour)),
++		"a time before all windows falls back to the first row")
++}

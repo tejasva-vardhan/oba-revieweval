@@ -1,0 +1,10 @@
+[
+  {
+    "id": 5151390767,
+    "login": "omlahore",
+    "user_type": "User",
+    "state": "COMMENTED",
+    "body": "Fix looks right to me. I ran the new test against the merge base and it fails there on the config 1 assertion, so it is a real regression test and not just a passing one.\n\nOne thing I noticed while checking it. The bug is visible through the fixture already, and on `25_1`, which the tests above it are using. On the merge base `/api/where/block/25_1` returns `DistanceAlongBlock` of 0 for the first configuration and 433750.77 for the first stop of the second one, and both go to 0 with your change. So I think an assertion through `callAPIHandler` would cover the same thing while also going through the real `GetBlockDetails` row shape, which the hand built rows kinda skip since they leave the arrival and departure fields at zero.\n",
+    "submitted_at": "2026-09-09T07:58:19Z"
+  }
+]

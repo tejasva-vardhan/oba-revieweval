@@ -14,3 +14,4 @@
 - Recommended **n = 33** rather than inventing n = 30.
 - Concurrency recommended count is 8 versus the protocol target of 4–6 because those PRs met the gold rule. Eligible PRs were not dropped to hit the target.
 - No LLM or linter runs.
+- Raw diffs are reconstructed from each merge commit's recorded parents (`git diff base...head` of that SHA). `#457` is a no-op on first-parent because the same RLock already landed via `#456`; the three-dot range of that merge commit is still used. HEAD of Maglev is never substituted.

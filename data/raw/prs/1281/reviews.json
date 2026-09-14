@@ -1,0 +1,18 @@
+[
+  {
+    "id": 4836279781,
+    "login": "coderabbitai[bot]",
+    "user_type": "Bot",
+    "state": "COMMENTED",
+    "body": "**Actionable comments posted: 1**\n\n<details>\n<summary>\ud83e\udd16 Prompt for all review comments with AI agents</summary>\n\n```\nVerify each finding against current code. Fix only still-valid issues, skip the\nrest with a brief reason, keep changes minimal, and validate.\n\nInline comments:\nIn `@internal/restapi/trip_for_vehicle_handler_test.go`:\n- Around line 179-190: Update the \u201cincludeReferences=false empties the\nreferences block\u201d test to assert the handler responds with HTTP 200, then\nrequire all reference collections\u2014including Situations and StopTimes\u2014to be\nnon-nil while remaining empty. Preserve the existing TripID assertion and checks\nfor Agencies, Routes, Trips, and Stops.\n```\n\n</details>\n\n<details>\n<summary>\ud83e\ude84 Autofix (Beta)</summary>\n\nFix all unresolved CodeRabbit comments on this PR:\n\n- [ ] <!-- {\"checkboxId\": \"4b0d0e0a-96d7-4f10-b296-3a18ea78f0b9\"} --> Push a commit to this branch (recommended)\n- [ ] <!-- {\"checkboxId\": \"ff5b1114-7d8c-49e6-8ac1-43f82af23a33\"} --> Create a new PR with the fixes\n\n</details>\n\n---\n\n<details>\n<summary>\u2139\ufe0f Review info</summary>\n\n<details>\n<summary>\u2699\ufe0f Run configuration</summary>\n\n**Configuration used**: Repository UI\n\n**Review profile**: ASSERTIVE\n\n**Plan**: Pro Plus\n\n**Run ID**: `1f6910ed-5bc8-441d-960c-89a32bcea679`\n\n</details>\n\n<details>\n<summary>\ud83d\udce5 Commits</summary>\n\nReviewing files that changed from the base of the PR and between 3b73fd9d1f0f25061b1bb591fb3616df57ebe202 and acfad51b6380ca22afdc829e2b250ac1f6001d8e.\n\n</details>\n\n<details>\n<summary>\ud83d\udcd2 Files selected for processing (2)</summary>\n\n* `internal/restapi/trip_for_vehicle_handler.go`\n* `internal/restapi/trip_for_vehicle_handler_test.go`\n\n</details>\n\n</details>\n\n<!-- This is an auto-generated comment by CodeRabbit for review status -->",
+    "submitted_at": "2026-08-02T00:50:30Z"
+  },
+  {
+    "id": 4890748135,
+    "login": "aaronbrethorst",
+    "user_type": "User",
+    "state": "APPROVED",
+    "body": "Approved on the merits \u2014 this is the right shape. It reuses `ShouldIncludeReferences` rather than re-deriving the flag, mirrors the empty-but-present convention already established in `trip_handler.go`, and moves the reference-building block verbatim so the `includeReferences=true` path is provably untouched. The test earns its place too: asserting every collection serializes as `[]` rather than `null` is exactly the part that would regress on the wire and wouldn't be caught by a shape-only check.\n\nHeads up on ordering: #1279 just landed on `main` and restructured the same references block in `trip_for_vehicle_handler.go`, so this branch now has conflicts. Please merge `main` in and resolve.\n\nOne thing to watch in the resolution: #1279 added a `referencedStopIDs(status, schedule)` helper so that schedule stops end up dereferenceable in `references.stops`. Your `buildTripForVehicleReferences` currently only takes `status`, so the merge needs to thread `schedule` through as well \u2014 otherwise resolving the conflict will silently drop #1279's fix.\n\nOnce it's mergeable it's good to go; no re-review needed unless the resolution changes behavior.\n",
+    "submitted_at": "2026-08-09T07:10:40Z"
+  }
+]

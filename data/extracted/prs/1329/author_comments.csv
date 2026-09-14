@@ -1,0 +1,4 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1329,5243871890,issue,soumajitgh,human,true,false,false,false,"Addressed the endpoint-coverage finding in 60e73af. The new handler-level test creates visible Los Angeles and Chicago trips with the same raw block_id and service_id, then verifies per-entry schedule.timeZone, serviceDate, status.serviceDate, and block isolation. It also exposed and fixed cross-agency block-row mixing. Full vet and test checks pass.",,,1329-002,false
+1329,3752040491,inline,soumajitgh,human,true,false,false,false,addressed in 60e73af,internal/restapi/trips_for_location_handler_test.go,,1329-006,false
+1329,4899580551,review_body,soumajitgh,human,true,false,false,true,,,,1329-010,false

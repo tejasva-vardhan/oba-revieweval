@@ -1,0 +1,58 @@
+[
+  {
+    "filename": "internal/restapi/reference_utils.go",
+    "status": "modified",
+    "additions": 66,
+    "deletions": 10,
+    "previous_filename": null,
+    "source": "github_files_api"
+  },
+  {
+    "filename": "internal/restapi/trip_details_handler.go",
+    "status": "modified",
+    "additions": 76,
+    "deletions": 76,
+    "previous_filename": null,
+    "source": "github_files_api"
+  },
+  {
+    "filename": "internal/restapi/trip_details_handler_test.go",
+    "status": "modified",
+    "additions": 7,
+    "deletions": 7,
+    "previous_filename": null,
+    "source": "github_files_api"
+  },
+  {
+    "filename": "internal/restapi/trip_for_vehicle_handler.go",
+    "status": "modified",
+    "additions": 33,
+    "deletions": 16,
+    "previous_filename": null,
+    "source": "github_files_api"
+  },
+  {
+    "filename": "internal/restapi/trip_for_vehicle_handler_test.go",
+    "status": "modified",
+    "additions": 187,
+    "deletions": 18,
+    "previous_filename": null,
+    "source": "github_files_api"
+  },
+  {
+    "filename": "internal/utils/api.go",
+    "status": "modified",
+    "additions": 22,
+    "deletions": 0,
+    "previous_filename": null,
+    "source": "github_files_api"
+  },
+  {
+    "filename": "internal/utils/api_test.go",
+    "status": "modified",
+    "additions": 55,
+    "deletions": 0,
+    "previous_filename": null,
+    "source": "github_files_api"
+  }
+]

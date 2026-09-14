@@ -1,0 +1,14 @@
+diff --git a/internal/restapi/routes_for_agency_handler.go b/internal/restapi/routes_for_agency_handler.go
+index dcc5f8d5..0a7c4c03 100644
+--- a/internal/restapi/routes_for_agency_handler.go
++++ b/internal/restapi/routes_for_agency_handler.go
+@@ -10,6 +10,9 @@ import (
+ func (api *RestAPI) routesForAgencyHandler(w http.ResponseWriter, r *http.Request) {
+ 	id, _ := utils.GetIDFromContext(r.Context())
+ 
++	api.GtfsManager.RLock()
++	defer api.GtfsManager.RUnlock()
++
+ 	agency := api.GtfsManager.FindAgency(id)
+ 
+ 	if agency == nil {

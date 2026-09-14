@@ -1,0 +1,152 @@
+diff --git a/internal/restapi/arrivals_and_departures_for_stop_handler_test.go b/internal/restapi/arrivals_and_departures_for_stop_handler_test.go
+index a1085e52..c2d2e989 100644
+--- a/internal/restapi/arrivals_and_departures_for_stop_handler_test.go
++++ b/internal/restapi/arrivals_and_departures_for_stop_handler_test.go
+@@ -1300,6 +1300,9 @@ func TestArrivalsAndDeparturesForStop_VehicleWithNilID(t *testing.T) {
+ 		NoID: true,
+ 	})
+ 
++	// Clear the service-IDs cache so the upcoming request sees the newly inserted calendar entry.
++	api.GtfsManager.MockClearServiceIDsCache()
++
+ 	combinedStopID := utils.FormCombinedID(agencyID, stopID)
+ 	resp, model := serveApiAndRetrieveEndpoint(t, api,
+ 		"/api/where/arrivals-and-departures-for-stop/"+combinedStopID+".json?key=TEST&minutesBefore=60&minutesAfter=60")
+diff --git a/internal/restapi/rate_limit_cleanup_test.go b/internal/restapi/rate_limit_cleanup_test.go
+index 1851c7ec..b5c3cbfc 100644
+--- a/internal/restapi/rate_limit_cleanup_test.go
++++ b/internal/restapi/rate_limit_cleanup_test.go
+@@ -81,7 +81,9 @@ func TestRateLimitMiddleware_LazyEvictionResetsExhaustedLimiters(t *testing.T) {
+ 	assert.Equal(t, http.StatusTooManyRequests, w.Code)
+ 
+ 	// Capture the exhausted limiter
++	middleware.mu.Lock()
+ 	client, ok := middleware.limiters.Get("exhausted-user")
++	middleware.mu.Unlock()
+ 	require.True(t, ok)
+ 	exhaustedLimiter := client.limiter
+ 	assert.Less(t, exhaustedLimiter.Tokens(), 1.0,
+@@ -98,7 +100,9 @@ func TestRateLimitMiddleware_LazyEvictionResetsExhaustedLimiters(t *testing.T) {
+ 		"Request after lazy eviction of exhausted limiter should succeed")
+ 
+ 	// Verify a new limiter was created
++	middleware.mu.Lock()
+ 	client, ok = middleware.limiters.Get("exhausted-user")
++	middleware.mu.Unlock()
+ 	require.True(t, ok)
+ 	assert.NotSame(t, exhaustedLimiter, client.limiter,
+ 		"Should have received a fresh limiter after idle threshold")
+@@ -114,11 +118,14 @@ func TestRateLimitMiddleware_LRUEviction(t *testing.T) {
+ 	for i := 0; i < maxLRUSize; i++ {
+ 		middleware.getLimiter(fmt.Sprintf("key-%d", i))
+ 	}
++	middleware.mu.Lock()
+ 	assert.Equal(t, maxLRUSize, middleware.limiters.Len(),
+ 		"Cache should be at capacity")
++	middleware.mu.Unlock()
+ 
+ 	// Adding one more should evict the oldest (key-0)
+ 	middleware.getLimiter("overflow-key")
++	middleware.mu.Lock()
+ 	assert.Equal(t, maxLRUSize, middleware.limiters.Len(),
+ 		"Cache should not exceed capacity")
+ 
+@@ -132,6 +139,7 @@ func TestRateLimitMiddleware_LRUEviction(t *testing.T) {
+ 
+ 	_, ok = middleware.limiters.Get(fmt.Sprintf("key-%d", maxLRUSize-1))
+ 	assert.True(t, ok, "Recently used key should still exist")
++	middleware.mu.Unlock()
+ }
+ 
+ // TestRateLimitMiddleware_LastSeenUpdateOnEveryRequest verifies lastSeen timestamp is updated on each request.
+@@ -150,7 +158,9 @@ func TestRateLimitMiddleware_LastSeenUpdateOnEveryRequest(t *testing.T) {
+ 	w := httptest.NewRecorder()
+ 	limitedHandler.ServeHTTP(w, req)
+ 
++	middleware.mu.Lock()
+ 	client, ok := middleware.limiters.Get("timestamp-test")
++	middleware.mu.Unlock()
+ 	require.True(t, ok)
+ 	firstSeenNano := client.lastSeen.Load()
+ 	firstSeen := time.Unix(0, firstSeenNano)
+@@ -163,7 +173,9 @@ func TestRateLimitMiddleware_LastSeenUpdateOnEveryRequest(t *testing.T) {
+ 	w = httptest.NewRecorder()
+ 	limitedHandler.ServeHTTP(w, req)
+ 
++	middleware.mu.Lock()
+ 	client, ok = middleware.limiters.Get("timestamp-test")
++	middleware.mu.Unlock()
+ 	require.True(t, ok)
+ 	secondSeenNano := client.lastSeen.Load()
+ 	secondSeen := time.Unix(0, secondSeenNano)
+@@ -194,10 +206,12 @@ func TestRateLimitMiddleware_ConcurrentGetLimiterReturnsSameInstance(t *testing.
+ 	wg.Wait()
+ 
+ 	// All goroutines should get a valid limiter and the key should exist
+-	for i := 0; i < goroutines; i++ {
+-		assert.NotNil(t, limiters[i], "All goroutines should get a valid limiter")
++	for i := 1; i < goroutines; i++ {
++		assert.Same(t, limiters[0], limiters[i], "All goroutines should get the same limiter instance")
+ 	}
+ 
++	middleware.mu.Lock()
+ 	_, ok := middleware.limiters.Get("new-key")
++	middleware.mu.Unlock()
+ 	assert.True(t, ok, "Key should exist in cache after concurrent access")
+ }
+diff --git a/internal/restapi/rate_limit_middleware.go b/internal/restapi/rate_limit_middleware.go
+index f7722e6c..5cc99c01 100644
+--- a/internal/restapi/rate_limit_middleware.go
++++ b/internal/restapi/rate_limit_middleware.go
+@@ -11,7 +11,7 @@ import (
+ 	"sync/atomic"
+ 	"time"
+ 
+-	lru "github.com/hashicorp/golang-lru/v2"
++	"github.com/hashicorp/golang-lru/v2/simplelru"
+ 	"maglev.onebusaway.org/internal/clock"
+ 	"maglev.onebusaway.org/internal/logging"
+ 
+@@ -34,7 +34,7 @@ type rateLimitClient struct {
+ // RateLimitMiddleware provides per-API-key rate limiting using an LRU cache with lazy eviction.
+ type RateLimitMiddleware struct {
+ 	mu         sync.Mutex
+-	limiters   *lru.Cache[string, *rateLimitClient]
++	limiters   *simplelru.LRU[string, *rateLimitClient]
+ 	rateLimit  rate.Limit
+ 	burstSize  int
+ 	exemptKeys map[string]bool
+@@ -64,7 +64,7 @@ func NewRateLimitMiddleware(ratePerSecond int, interval time.Duration, exemptKey
+ 		}
+ 	}
+ 
+-	cache, _ := lru.New[string, *rateLimitClient](maxLRUSize)
++	cache, _ := simplelru.NewLRU[string, *rateLimitClient](maxLRUSize, nil)
+ 
+ 	middleware := &RateLimitMiddleware{
+ 		limiters:   cache,
+@@ -205,5 +205,7 @@ func (rl *RateLimitMiddleware) sendRateLimitExceeded(w http.ResponseWriter, r *h
+ // Stop performs cleanup of rate limiter resources.
+ // It is safe to call multiple times with the LRU-based design
+ func (rl *RateLimitMiddleware) Stop() {
++	rl.mu.Lock()
++	defer rl.mu.Unlock()
+ 	rl.limiters.Purge()
+ }
+diff --git a/internal/restapi/route_handler_test.go b/internal/restapi/route_handler_test.go
+index ae7df843..40a067d8 100644
+--- a/internal/restapi/route_handler_test.go
++++ b/internal/restapi/route_handler_test.go
+@@ -57,7 +57,11 @@ func TestRouteHandlerEndToEnd(t *testing.T) {
+ 	assert.Equal(t, routes[0].Url, entry["url"])
+ 	assert.Equal(t, routes[0].Color, entry["color"])
+ 	assert.Equal(t, routes[0].TextColor, entry["textColor"])
+-	assert.Equal(t, int(routes[0].Type), int(entry["type"].(float64)))
++	if typeVal, typeOk := entry["type"].(float64); typeOk {
++		assert.Equal(t, int(routes[0].Type), int(typeVal))
++	} else {
++		assert.Fail(t, "Route type missing or not a number")
++	}
+ 
+ 	references, ok := data["references"].(map[string]interface{})
+ 	assert.True(t, ok, "References section should exist")

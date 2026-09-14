@@ -1,0 +1,42 @@
+[
+  {
+    "id": 4948889647,
+    "login": "ARCoder181105",
+    "user_type": "User",
+    "state": "CHANGES_REQUESTED",
+    "body": "Traced both paths \u2014 the refactor is output-identical, and the perf win is real.\n\n`GetAlertsForTrip` and `situationRefsForTrip` both do `GetTrip` \u2192 `GetRoute` \u2192 `GetAlertsByIDs(tripID, routeID, agencyID)` and both end at `situationRefsFromAlerts(alerts, agencyID)`. Same alerts, same IDs \u2014 so this drops one duplicated `GetTrip`+`GetRoute`+alert-index scan per arrival row, which matters on wide `minutesBefore`/`minutesAfter` windows. It also makes the plural handler match the singular one (`arrival_and_departure_for_stop_handler.go:401`).\n\nOne request, two notes.\n\n**1. `arrivals_and_departures_for_stop_handler_test.go:135` \u2014 the test passes on the pre-change code too.**\n\nRevert the one-line change and it still goes green, because the old path resolved the same alert with the same ID. Good coverage of the situationIds\u2194references invariant, but it doesn't pin what this PR changed. Asserting the IDs came from the status would, replacing line 135:\n\n```go\n\trequire.NotNil(t, affectedArrival.TripStatus)\n\tassert.Equal(t, affectedArrival.TripStatus.SituationIDs, affectedArrival.SituationIDs,\n\t\t\"arrival situationIds must be the ones BuildTripStatus resolved, not a second lookup\")\n\tassert.Contains(t, affectedArrival.SituationIDs, wantSituationID,\n```\n\nThat's exactly the property the commit claims, and it breaks if someone reintroduces a separate lookup.\n\n**2. `arrivals_and_departures_for_stop_handler.go:448` \u2014 consistency nit only, fine to leave.**\n\n`statusExtras.snapshot` is read inside `if status != nil` (line 393) while `statusExtras.situations` is read outside it, so the two reads of the same struct look like they have different safety requirements. Both guards are in fact unreachable \u2014 every return in `BuildTripStatus` (`trips_helper.go:103`, `108`, `366`) passes a non-nil `status` and a non-nil `extras`. No change needed.\n\n*Correcting my earlier version of this point:* I suggested `api.tripSituationsFor(ctx, st.TripID, statusExtras)` here. That was wrong \u2014 it returns `([]string, []models.Situation)` and bypasses the `situationCollector`, which this handler needs so dedupe stays in one place and `references.Situations` is built once at line 624. Using it would mean hand-appending and hand-deduping per arrival. A nil guard would also be dead code, and risks leaving `situationIDs` nil, which marshals as `\"situationIds\": null` instead of `[]`; the current `addRefs` avoids that via `make([]string, 0, len(refs))`. The code as written is correct.\n\n**3. Commit message body has literal `\\n` instead of newlines** \u2014 renders as one unwrapped line. Worth an amend while it's a single commit.\n\nVerified against the deployed Puget Sound server: stop `1_10190` (Route 70 reroute) returns `1_86736` on each affected arrival with a matching `references.situations` entry \u2014 the shape this PR preserves. Two notes from that, both out of scope here:\n\n- Alert IDs arrive already prefixed (`1_86736`), so the idempotency guard in `situationID()` is load-bearing.\n- Prod returns `entry.situationIds: []` at the top level on that stop, while we emit the union of every collected ref. Pre-existing, but this PR now feeds that union from a new source, so it may be worth a separate look.",
+    "submitted_at": "2026-08-17T06:15:13Z"
+  },
+  {
+    "id": 4948993112,
+    "login": "ARCoder181105",
+    "user_type": "User",
+    "state": "COMMENTED",
+    "body": "",
+    "submitted_at": "2026-08-17T06:36:12Z"
+  },
+  {
+    "id": 4949938814,
+    "login": "soumajitgh",
+    "user_type": "User",
+    "state": "COMMENTED",
+    "body": "",
+    "submitted_at": "2026-08-17T08:55:06Z"
+  },
+  {
+    "id": 4952800433,
+    "login": "ARCoder181105",
+    "user_type": "User",
+    "state": "APPROVED",
+    "body": "LGTM",
+    "submitted_at": "2026-08-17T16:52:16Z"
+  },
+  {
+    "id": 4969730321,
+    "login": "aaronbrethorst",
+    "user_type": "User",
+    "state": "APPROVED",
+    "body": "Four lines of production code for a real win on an endpoint where\n`minutesBefore`/`minutesAfter` can each be 24 hours. Good trade.\n\nI didn't take the equivalence on faith \u2014 I traced both sides.\n`GetAlertsForTrip` (internal/gtfs/realtime.go:154) and `situationRefsForTrip`\n(internal/restapi/trips_helper.go:833) do the same resolution: `GetTrip` \u2192\n`GetRoute` \u2192 `GetAlertsByIDs(tripID, routeID, agencyID)`, both feeding\n`situationRefsFromAlerts` with the same agency. So the reused set is\ntrip+route+agency scoped exactly as before, `addRefs` allocates a fresh slice\nper call and dedupes on the same key, and `references.situations` composition is\nunchanged. Worth noting for the record: issue #1341's premise that\n`GetAlertsForTrip` \"matches on trip alone\" is stale \u2014 the two sets were already\nidentical, so this is a pure performance refactor rather than a behavior fix.\nThat's a better outcome, not a worse one, but it's worth being precise about.\n\nAlso a nice side effect: the line you removed was the handler's only `r.Context()`\nuse, which bypassed the snapshot-cache-wrapped `ctx` established earlier in the\nfunction. Everything now flows through the right context.\n\nTwo notes, neither blocking:\n\n- The new test is a good invariant guard (situationIds \u2194 references.situations),\n  but it doesn't actually pin *this* change \u2014 since both paths resolve the same\n  set, it passes on pre-change code too. @ARCoder181105 made this point on the\n  earlier revision and it still stands; the test is worth keeping, just not for\n  the reason the description gives.\n- This PR removes the last production caller of\n  `Manager.GetAlertsForTrip` \u2014 after it lands, only `realtime_test.go` exercises\n  it. CONTRIBUTING.md calls out leftover dead code specifically. I'd rather not\n  grow a 4-line perf PR to cover it, but a quick follow-up deleting that method\n  and its test would be welcome if you want to take it.\n\nMerging.\n",
+    "submitted_at": "2026-08-19T07:55:32Z"
+  }
+]

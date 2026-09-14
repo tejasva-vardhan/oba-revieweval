@@ -1,0 +1,34 @@
+[
+  {
+    "filename": "internal/models/frequency.go",
+    "status": "modified",
+    "additions": null,
+    "deletions": null,
+    "previous_filename": null,
+    "source": "github_pull_diff"
+  },
+  {
+    "filename": "internal/restapi/http_test.go",
+    "status": "modified",
+    "additions": null,
+    "deletions": null,
+    "previous_filename": null,
+    "source": "github_pull_diff"
+  },
+  {
+    "filename": "internal/restapi/schedule_for_stop_frequencies_test.go",
+    "status": "added",
+    "additions": null,
+    "deletions": null,
+    "previous_filename": null,
+    "source": "github_pull_diff"
+  },
+  {
+    "filename": "internal/restapi/schedule_for_stop_handler.go",
+    "status": "modified",
+    "additions": null,
+    "deletions": null,
+    "previous_filename": null,
+    "source": "github_pull_diff"
+  }
+]

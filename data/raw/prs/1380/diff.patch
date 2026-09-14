@@ -1,0 +1,460 @@
+diff --git a/internal/restapi/reference_utils.go b/internal/restapi/reference_utils.go
+index 768f120e..ce079353 100644
+--- a/internal/restapi/reference_utils.go
++++ b/internal/restapi/reference_utils.go
+@@ -24,21 +24,51 @@ func buildAgencyReferences(agencies []gtfsdb.Agency) []models.AgencyReference {
+ 	return refs
+ }
+ 
++// BuildRouteReferences resolves the route references for the given stops,
++// scoped to the requested agency. Only routes whose combined ID matches one
++// of the stop's StaticRouteIDs are returned, each carrying its own agency
++// rather than being overwritten with the caller's.
+ func (api *RestAPI) BuildRouteReferences(ctx context.Context, agencyID string, stops []models.Stop) ([]models.Route, error) {
++	expectedCombinedIDs, originalRouteIDs, err := expectedRouteIDsForStops(ctx, stops, agencyID)
++	if err != nil {
++		return nil, err
++	}
++	if len(originalRouteIDs) == 0 {
++		return []models.Route{}, nil
++	}
++
++	routes, err := api.GtfsManager.GtfsDB.Queries.GetRoutesByIDs(ctx, originalRouteIDs)
++	if err != nil {
++		return nil, err
++	}
++
++	filteredRoutes := filterRoutesByExpectedCombinedID(routes, expectedCombinedIDs, agencyID)
++	return buildRouteModels(ctx, agencyID, filteredRoutes)
++}
++
++// expectedRouteIDsForStops walks every stop's StaticRouteIDs and returns the
++// set of agency-combined IDs a route must match to be a legitimate reference,
++// plus the deduplicated bare route IDs to query the database for. A
++// cancelled context aborts the walk and surfaces ctx.Err() to the caller.
++func expectedRouteIDsForStops(ctx context.Context, stops []models.Stop, agencyID string) (map[string]bool, []string, error) {
+ 	routeIDSet := make(map[string]bool)
++	expectedCombinedIDs := make(map[string]bool)
+ 	originalRouteIDs := make([]string, 0)
+ 
+ 	for _, stop := range stops {
+ 		if ctx.Err() != nil {
+-			return nil, ctx.Err()
++			return nil, nil, ctx.Err()
+ 		}
+ 
+ 		for _, routeID := range stop.StaticRouteIDs {
+-			_, originalRouteID, err := utils.ExtractAgencyIDAndCodeID(routeID)
++			routeAgencyID, originalRouteID, err := utils.ExtractAgencyIDAndCodeID(routeID)
+ 			if err != nil {
+-				continue
++				originalRouteID = routeID
++				routeAgencyID = agencyID
+ 			}
+ 
++			expectedCombinedIDs[utils.FormCombinedID(routeAgencyID, originalRouteID)] = true
++
+ 			if !routeIDSet[originalRouteID] {
+ 				routeIDSet[originalRouteID] = true
+ 				originalRouteIDs = append(originalRouteIDs, originalRouteID)
+@@ -46,16 +76,31 @@ func (api *RestAPI) BuildRouteReferences(ctx context.Context, agencyID string, s
+ 		}
+ 	}
+ 
+-	if len(originalRouteIDs) == 0 {
+-		return []models.Route{}, nil
+-	}
++	return expectedCombinedIDs, originalRouteIDs, nil
++}
+ 
+-	routes, err := api.GtfsManager.GtfsDB.Queries.GetRoutesByIDs(ctx, originalRouteIDs)
+-	if err != nil {
+-		return nil, err
+-	}
++// filterRoutesByExpectedCombinedID keeps only the routes whose real,
++// agency-qualified ID (not the caller's agency) was actually requested by a
++// stop, deduplicating by that combined ID. This is what discards a route
++// that only matched by a bare-ID collision with an unrelated agency.
++func filterRoutesByExpectedCombinedID(routes []gtfsdb.Route, expectedCombinedIDs map[string]bool, agencyID string) []gtfsdb.Route {
++	filtered := make([]gtfsdb.Route, 0, len(routes))
++	seenCombinedIDs := make(map[string]bool)
++	for _, route := range routes {
++		targetAgencyID := route.AgencyID
++		if targetAgencyID == "" {
++			targetAgencyID = agencyID
++		}
+ 
+-	return buildRouteModels(ctx, agencyID, routes)
++		combinedID := utils.FormCombinedID(targetAgencyID, route.ID)
++		if !expectedCombinedIDs[combinedID] || seenCombinedIDs[combinedID] {
++			continue
++		}
++
++		seenCombinedIDs[combinedID] = true
++		filtered = append(filtered, route)
++	}
++	return filtered
+ }
+ 
+ // buildRouteModels converts a slice of database routes into model routes.
+@@ -67,18 +112,23 @@ func buildRouteModels(ctx context.Context, agencyID string, routes []gtfsdb.Rout
+ 			return nil, ctx.Err()
+ 		}
+ 
+-		combinedID := utils.FormCombinedID(agencyID, route.ID)
++		targetAgencyID := route.AgencyID
++		if targetAgencyID == "" {
++			targetAgencyID = agencyID
++		}
++
++		combinedID := utils.FormCombinedID(targetAgencyID, route.ID)
+ 
+ 		routeModel := models.NewRoute(
+ 			combinedID,
+-			agencyID,
+-			route.ShortName.String,
+-			route.LongName.String,
+-			route.Desc.String,
++			targetAgencyID,
++			nulls.StringOrEmpty(route.ShortName),
++			nulls.StringOrEmpty(route.LongName),
++			nulls.StringOrEmpty(route.Desc),
+ 			models.RouteType(route.Type),
+-			route.Url.String,
+-			route.Color.String,
+-			route.TextColor.String,
++			nulls.StringOrEmpty(route.Url),
++			nulls.StringOrEmpty(route.Color),
++			nulls.StringOrEmpty(route.TextColor),
+ 		)
+ 		modelRoutes = append(modelRoutes, routeModel)
+ 	}
+@@ -152,11 +202,18 @@ func (api *RestAPI) routeReferenceForTrip(ctx context.Context, routeID string, s
+ // appendRouteAgencyReference adds a route's own agency to references when it is not
+ // the agency the request was scoped to, so the agencyId a cross-agency route
+ // reference carries resolves against references.agencies. A lookup that fails costs
+-// the reference rather than the response, as with the route itself.
++// the reference rather than the response, as with the route itself. Safe to call once
++// per route even when several routes share the same foreign agency â€” an agency
++// already present in references is never added twice.
+ func (api *RestAPI) appendRouteAgencyReference(ctx context.Context, references *models.ReferencesModel, routeAgencyID, requestAgencyID string) {
+ 	if routeAgencyID == requestAgencyID {
+ 		return
+ 	}
++	for _, existing := range references.Agencies {
++		if existing.ID == routeAgencyID {
++			return
++		}
++	}
+ 
+ 	routeAgency, err := api.GtfsManager.GtfsDB.Queries.GetAgency(ctx, routeAgencyID)
+ 	if err != nil {
+diff --git a/internal/restapi/reference_utils_test.go b/internal/restapi/reference_utils_test.go
+index e9b7240e..3edf26c9 100644
+--- a/internal/restapi/reference_utils_test.go
++++ b/internal/restapi/reference_utils_test.go
+@@ -13,6 +13,7 @@ import (
+ 	"github.com/stretchr/testify/assert"
+ 	"github.com/stretchr/testify/require"
+ 	"maglev.onebusaway.org/gtfsdb"
++	"maglev.onebusaway.org/internal/clock"
+ 	"maglev.onebusaway.org/internal/models"
+ 	"maglev.onebusaway.org/internal/nulls"
+ 	"maglev.onebusaway.org/internal/utils"
+@@ -258,3 +259,142 @@ func TestBuildStopReferencesAndRouteIDsForStops_DeduplicatesStopIDs(t *testing.T
+ 	require.NoError(t, err)
+ 	assert.Len(t, stops, len(stopIDs), "duplicate stop IDs should be collapsed")
+ }
++
++// TestBuildRouteReferences_Empty verifies that passing no stops returns an empty,
++// non-nil slice without touching the database.
++func TestBuildRouteReferences_Empty(t *testing.T) {
++	api := createTestApi(t)
++	routes, err := api.BuildRouteReferences(context.Background(), "25", []models.Stop{})
++	require.NoError(t, err)
++	assert.Empty(t, routes)
++	assert.NotNil(t, routes, "should return a non-nil empty slice")
++}
++
++// TestBuildRouteReferences_ContextCancellation verifies that a cancelled context
++// causes BuildRouteReferences to return immediately with context.Canceled.
++func TestBuildRouteReferences_ContextCancellation(t *testing.T) {
++	api := createTestApi(t)
++	ctx, cancel := context.WithCancel(context.Background())
++	cancel() // cancel immediately
++
++	stops := []models.Stop{
++		{
++			ID:             "25_stop1",
++			StaticRouteIDs: []string{"25_route1"},
++		},
++	}
++
++	_, err := api.BuildRouteReferences(ctx, "25", stops)
++	require.Error(t, err)
++	assert.True(t, errors.Is(err, context.Canceled))
++}
++
++// TestBuildRouteReferences_MultiAgencyScopingAndCollision exercises the agency
++// filtering introduced in BuildRouteReferences: only routes whose combined ID
++// (agency_routeID) matches a referenced stop are returned, each carrying its
++// own agency. It also covers the fallback branch for route IDs without an
++// underscore (the ExtractAgencyIDAndCodeID error path).
++func TestBuildRouteReferences_MultiAgencyScopingAndCollision(t *testing.T) {
++	// Build a multi-agency fixture where Agency "A1" has routes r100, r200
++	// and Agency "A2" has routes r300, r400.
++	multiAgencyFiles := map[string]string{
++		"agency.txt": "agency_id,agency_name,agency_url,agency_timezone\n" +
++			"A1,Agency One,http://agency1.com,America/Los_Angeles\n" +
++			"A2,Agency Two,http://agency2.com,America/Los_Angeles\n",
++		"routes.txt": "route_id,agency_id,route_short_name,route_long_name,route_type\n" +
++			"r100,A1,100-A1,Route 100 For Agency 1,3\n" +
++			"r200,A1,200-A1,Route 200 For Agency 1,3\n" +
++			"r300,A2,300-A2,Route 300 For Agency 2,3\n" +
++			"r400,A2,400-A2,Route 400 For Agency 2,3\n",
++		"calendar.txt": "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n" +
++			"svc1,1,1,1,1,1,1,1,20240101,20991231\n",
++		"stops.txt": "stop_id,stop_name,stop_lat,stop_lon\n" +
++			"s1,Stop 1,37.7749,-122.4194\n" +
++			"s2,Stop 2,37.7849,-122.4094\n",
++		"trips.txt": "route_id,service_id,trip_id,trip_headsign,direction_id\n" +
++			"r100,svc1,t1,Headsign,0\n",
++		"stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n" +
++			"t1,08:00:00,08:00:00,s1,1\n",
++	}
++
++	api := createTestApiWithGTFSFixture(t, clock.RealClock{}, "multi-agency-routes.zip", multiAgencyFiles)
++	ctx := context.Background()
++
++	t.Run("Only referenced agency routes are returned", func(t *testing.T) {
++		// Stop only references A1's route r100
++		stops := []models.Stop{
++			{
++				ID:             "A1_s1",
++				StaticRouteIDs: []string{"A1_r100"},
++			},
++		}
++
++		routes, err := api.BuildRouteReferences(ctx, "A1", stops)
++		require.NoError(t, err)
++		require.Len(t, routes, 1, "Must return exactly 1 route reference for A1_r100")
++
++		r := routes[0]
++		assert.Equal(t, "A1_r100", r.ID, "Route ID must be agency-combined for A1")
++		assert.Equal(t, "A1", r.AgencyID, "AgencyID must strictly be A1")
++		assert.Equal(t, "100-A1", r.ShortName)
++		assert.Equal(t, "Route 100 For Agency 1", r.LongName)
++		assert.Equal(t, models.RouteType(3), r.Type)
++	})
++
++	t.Run("Multi-agency stop returns all referenced routes with true agency IDs", func(t *testing.T) {
++		// Stop served by both Agency 1 and Agency 2
++		stops := []models.Stop{
++			{
++				ID:             "A1_s1",
++				StaticRouteIDs: []string{"A1_r100", "A2_r300"},
++			},
++		}
++
++		routes, err := api.BuildRouteReferences(ctx, "A1", stops)
++		require.NoError(t, err)
++		require.Len(t, routes, 2, "Must return both referenced routes")
++
++		routesByID := make(map[string]models.Route)
++		for _, r := range routes {
++			routesByID[r.ID] = r
++		}
++
++		r1, ok1 := routesByID["A1_r100"]
++		require.True(t, ok1, "A1_r100 must be in references")
++		assert.Equal(t, "A1", r1.AgencyID)
++		assert.Equal(t, "100-A1", r1.ShortName)
++
++		r2, ok2 := routesByID["A2_r300"]
++		require.True(t, ok2, "A2_r300 must be in references with its authentic AgencyID")
++		assert.Equal(t, "A2", r2.AgencyID, "A2's route must retain A2 as its AgencyID, not overwritten to A1")
++		assert.Equal(t, "300-A2", r2.ShortName)
++	})
++
++	t.Run("Duplicate route references are deduplicated across multiple stops", func(t *testing.T) {
++		stops := []models.Stop{
++			{ID: "A1_s1", StaticRouteIDs: []string{"A1_r100", "A1_r200"}},
++			{ID: "A1_s2", StaticRouteIDs: []string{"A1_r100", "A1_r200"}},
++		}
++
++		routes, err := api.BuildRouteReferences(ctx, "A1", stops)
++		require.NoError(t, err)
++		assert.Len(t, routes, 2, "Duplicate route references across multiple stops must be deduplicated")
++	})
++
++	t.Run("Handles route ID without underscore", func(t *testing.T) {
++		// Mock a route in the DB without an underscore in its ID
++		_, err := api.GtfsManager.GtfsDB.DB.Exec("INSERT INTO routes (id, agency_id, short_name, type) VALUES ('r999', 'A1', '999', 3)")
++		require.NoError(t, err)
++		t.Cleanup(func() {
++			_, _ = api.GtfsManager.GtfsDB.DB.Exec("DELETE FROM routes WHERE id = 'r999'")
++		})
++
++		stops := []models.Stop{{ID: "A1_s1", StaticRouteIDs: []string{"r999"}}}
++		routes, err := api.BuildRouteReferences(ctx, "A1", stops)
++		require.NoError(t, err)
++		require.Len(t, routes, 1)
++		// Expected: A1_r999 because buildRouteModels prepends agencyID for routes
++		// without an underscore (the ExtractAgencyIDAndCodeID fallback path).
++		assert.Equal(t, "A1_r999", routes[0].ID)
++	})
++}
+diff --git a/internal/restapi/stops_for_agency_handler.go b/internal/restapi/stops_for_agency_handler.go
+index 88a381e0..a0fdb7c5 100644
+--- a/internal/restapi/stops_for_agency_handler.go
++++ b/internal/restapi/stops_for_agency_handler.go
+@@ -61,6 +61,13 @@ func (api *RestAPI) stopsForAgencyHandler(w http.ResponseWriter, r *http.Request
+ 	references.Agencies = []models.AgencyReference{models.AgencyReferenceFromDatabase(agency)}
+ 	references.Routes = routeRefs
+ 
++	// A route in routeRefs can belong to a different agency than the one
++	// requested here (a stop can be served by more than one agency's routes).
++	// Every such route's agencyId must resolve against references.agencies too.
++	for _, route := range routeRefs {
++		api.appendRouteAgencyReference(ctx, references, route.AgencyID, id)
++	}
++
+ 	// Resolve parent stations referenced by any stop into references.stops.
+ 	parentRefs, err := api.buildParentStationReferences(ctx, id, stopsList)
+ 	if err != nil {
+diff --git a/internal/restapi/stops_for_agency_handler_test.go b/internal/restapi/stops_for_agency_handler_test.go
+index 49d9370e..1ddc117c 100644
+--- a/internal/restapi/stops_for_agency_handler_test.go
++++ b/internal/restapi/stops_for_agency_handler_test.go
+@@ -9,6 +9,7 @@ import (
+ 
+ 	"github.com/stretchr/testify/assert"
+ 	"github.com/stretchr/testify/require"
++	"maglev.onebusaway.org/internal/clock"
+ 	"maglev.onebusaway.org/internal/models"
+ 	"maglev.onebusaway.org/internal/restapi/testdata"
+ )
+@@ -86,6 +87,52 @@ func TestStopsForAgencyEndToEnd(t *testing.T) {
+ 	assert.False(t, model.Data.LimitExceeded)
+ }
+ 
++// TestStopsForAgencyIncludesCrossAgencyRouteOwner covers the response-level
++// invariant that every references.routes[].agencyId must resolve against
++// references.agencies. A stop can be served by routes from more than one
++// agency; when stops-for-agency/A1 surfaces a route owned by A2, A2 itself
++// must also appear in references.agencies, not just A1.
++func TestStopsForAgencyIncludesCrossAgencyRouteOwner(t *testing.T) {
++	files := map[string]string{
++		"agency.txt": "agency_id,agency_name,agency_url,agency_timezone\n" +
++			"A1,Agency One,http://agency1.com,America/Los_Angeles\n" +
++			"A2,Agency Two,http://agency2.com,America/Los_Angeles\n",
++		"routes.txt": "route_id,agency_id,route_short_name,route_long_name,route_type\n" +
++			"r100,A1,100-A1,Route 100 For Agency 1,3\n" +
++			"r300,A2,300-A2,Route 300 For Agency 2,3\n",
++		"calendar.txt": "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n" +
++			"svc1,1,1,1,1,1,1,1,20240101,20991231\n",
++		"stops.txt": "stop_id,stop_name,stop_lat,stop_lon\n" +
++			"s1,Shared Stop,37.7749,-122.4194\n",
++		"trips.txt": "route_id,service_id,trip_id,trip_headsign,direction_id\n" +
++			"r100,svc1,t1,A1 Headsign,0\n" +
++			"r300,svc1,t2,A2 Headsign,0\n",
++		"stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n" +
++			"t1,08:00:00,08:00:00,s1,1\n" +
++			"t2,09:00:00,09:00:00,s1,1\n",
++	}
++
++	api := createTestApiWithGTFSFixture(t, clock.RealClock{}, "cross-agency-stops.zip", files)
++
++	resp, model := callAPIHandler[StopsResponse](t, api, stopsForAgencyURL("A1"))
++
++	require.Equal(t, http.StatusOK, resp.StatusCode)
++	require.NotEmpty(t, model.Data.List, "expected the shared stop to be returned for A1")
++
++	agencyIDs := make(map[string]bool)
++	for _, a := range model.Data.References.Agencies {
++		agencyIDs[a.ID] = true
++	}
++	assert.True(t, agencyIDs["A1"], "references.agencies must include the requested agency")
++	assert.True(t, agencyIDs["A2"], "references.agencies must include A2, which owns a route referenced by the shared stop")
++
++	require.NotEmpty(t, model.Data.References.Routes, "expected route references for the shared stop")
++	for _, route := range model.Data.References.Routes {
++		assert.True(t, agencyIDs[route.AgencyID],
++			"route %s has agencyId %s which is not present in references.agencies", route.ID, route.AgencyID)
++	}
++}
++
+ func TestStopsForAgencyInvalidAgency(t *testing.T) {
+ 	api := createTestApi(t)
+ 	defer api.Shutdown()
+diff --git a/internal/restapi/stops_for_route_handler.go b/internal/restapi/stops_for_route_handler.go
+index 1fbb096e..e18a7c32 100644
+--- a/internal/restapi/stops_for_route_handler.go
++++ b/internal/restapi/stops_for_route_handler.go
+@@ -200,6 +200,13 @@ func (api *RestAPI) buildAndSendResponse(w http.ResponseWriter, r *http.Request,
+ 		references.Agencies = []models.AgencyReference{agencyRef}
+ 		references.Routes = routes
+ 		references.Stops = stopsList
++
++		// A route in routes can belong to a different agency than the one
++		// queried here (a stop can be served by more than one agency's routes).
++		// Every such route's agencyId must resolve against references.agencies too.
++		for _, route := range routes {
++			api.appendRouteAgencyReference(ctx, references, route.AgencyID, currentAgency.ID)
++		}
+ 	}
+ 
+ 	response := models.NewEntryResponse(result, *references, api.Clock)
+diff --git a/internal/restapi/stops_for_route_handler_test.go b/internal/restapi/stops_for_route_handler_test.go
+index 28a813a6..37abcfeb 100644
+--- a/internal/restapi/stops_for_route_handler_test.go
++++ b/internal/restapi/stops_for_route_handler_test.go
+@@ -436,3 +436,48 @@ func TestDisambiguateGroupNamesCollidesWithUniqueName(t *testing.T) {
+ 	disambiguateGroupNames(reversed)
+ 	assertResolved(t, reversed)
+ }
++
++// TestStopsForRouteIncludesCrossAgencyRouteOwner covers the same
++// response-level invariant as TestStopsForAgencyIncludesCrossAgencyRouteOwner
++// (stops_for_agency_handler_test.go), for the stops-for-route endpoint: a
++// stop served by more than one agency's routes must have every one of those
++// agencies present in references.agencies, not just the queried route's own.
++func TestStopsForRouteIncludesCrossAgencyRouteOwner(t *testing.T) {
++	files := map[string]string{
++		"agency.txt": "agency_id,agency_name,agency_url,agency_timezone\n" +
++			"A1,Agency One,http://agency1.com,America/Los_Angeles\n" +
++			"A2,Agency Two,http://agency2.com,America/Los_Angeles\n",
++		"routes.txt": "route_id,agency_id,route_short_name,route_long_name,route_type\n" +
++			"r100,A1,100-A1,Route 100 For Agency 1,3\n" +
++			"r300,A2,300-A2,Route 300 For Agency 2,3\n",
++		"calendar.txt": "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n" +
++			"svc1,1,1,1,1,1,1,1,20240101,20991231\n",
++		"stops.txt": "stop_id,stop_name,stop_lat,stop_lon\n" +
++			"s1,Shared Stop,37.7749,-122.4194\n",
++		"trips.txt": "route_id,service_id,trip_id,trip_headsign,direction_id\n" +
++			"r100,svc1,t1,A1 Headsign,0\n" +
++			"r300,svc1,t2,A2 Headsign,0\n",
++		"stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n" +
++			"t1,08:00:00,08:00:00,s1,1\n" +
++			"t2,09:00:00,09:00:00,s1,1\n",
++	}
++
++	api := createTestApiWithGTFSFixture(t, clock.RealClock{}, "cross-agency-stops-for-route.zip", files)
++
++	resp, model := callAPIHandler[StopsForRouteResponse](t, api, "/api/where/stops-for-route/A1_r100.json?key=TEST")
++
++	require.Equal(t, http.StatusOK, resp.StatusCode)
++
++	agencyIDs := make(map[string]bool)
++	for _, a := range model.Data.References.Agencies {
++		agencyIDs[a.ID] = true
++	}
++	assert.True(t, agencyIDs["A1"], "references.agencies must include the queried route's own agency")
++	assert.True(t, agencyIDs["A2"], "references.agencies must include A2, which owns a route also serving the shared stop")
++
++	require.NotEmpty(t, model.Data.References.Routes, "expected route references for the shared stop")
++	for _, route := range model.Data.References.Routes {
++		assert.True(t, agencyIDs[route.AgencyID],
++			"route %s has agencyId %s which is not present in references.agencies", route.ID, route.AgencyID)
++	}
++}

@@ -1,0 +1,267 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1385,5372545439,issue,coderabbitai[bot],bot,false,false,false,false,"<!-- This is an auto-generated comment: summarize by coderabbit.ai -->
+<!-- review_stack_entry_start -->
+
+<a href=""https://app.coderabbit.ai/change-stack/OneBusAway/maglev/pull/1385#gh-light-mode-only""><img src=""https://storage.googleapis.com/coderabbit_public_assets/review-stack-in-coderabbit-ui.svg"" alt=""Review Change Stack"" width=""202"" height=""32""></a><a href=""https://app.coderabbit.ai/change-stack/OneBusAway/maglev/pull/1385#gh-dark-mode-only""><img src=""https://storage.googleapis.com/coderabbit_public_assets/review-stack-in-coderabbit-ui-dark.svg"" alt=""Review Change Stack"" width=""202"" height=""32""></a>
+
+<!-- review_stack_entry_end -->
+<!-- recent_review_start -->
+
+No actionable comments were generated in the recent review. 🎉
+
+<details>
+<summary>ℹ️ Recent review info</summary>
+
+<details>
+<summary>⚙️ Run configuration</summary>
+
+**Configuration used**: Repository UI
+
+**Review profile**: ASSERTIVE
+
+**Plan**: Advanced
+
+**Run ID**: `aaf1c214-504f-4a86-8e20-11f77c77ae6b`
+
+</details>
+
+<details>
+<summary>📥 Commits</summary>
+
+Reviewing files that changed from the base of the PR and between 476ad8b374de816851eb1bce811c80308decc334 and 3d66de08d9671381a25a3b1735e5a499e7c65bc0.
+
+</details>
+
+<details>
+<summary>📒 Files selected for processing (4)</summary>
+
+* `CONTRIBUTING.md`
+* `internal/restapi/schedule_for_stop_handler.go`
+* `internal/utils/validation.go`
+* `internal/utils/validation_test.go`
+
+</details>
+
+<details>
+<summary>💤 Files with no reviewable changes (2)</summary>
+
+* internal/utils/validation_test.go
+* internal/utils/validation.go
+
+</details>
+
+**Included review availability:** Your plan provides up to 1 included review per hour; 0 remain after this review.
+
+</details>
+
+---
+
+
+
+<!-- recent_review_end -->
+<!-- walkthrough_start -->
+
+<details>
+<summary>📝 Walkthrough</summary>
+
+## Walkthrough
+
+The schedule-for-stop handler now validates the `date` parameter before agency and stop lookup. `ValidateServiceDate` replaces `ValidateDate`. Tests cover invalid dates and valid-date not-found responses.
+
+### Changes
+
+**Schedule-for-stop validation**
+
+|Layer / File(s)|Summary|
+|---|---|
+|**Service-date validation contract** <br> `internal/utils/validation.go`, `internal/utils/validation_test.go`, `CONTRIBUTING.md`|`ValidateServiceDate` parses dates through `ParseDate` in UTC. The documentation uses the new name, and the former validator tests are removed.|
+|**Pre-lookup handler validation** <br> `internal/restapi/schedule_for_stop_handler.go`, `internal/restapi/schedule_for_stop_handler_test.go`|The handler returns a `date` field error before lookup when the date is invalid. It retains agency-timezone parsing after lookup. Tests cover unknown and known agencies, unknown stops, and valid dates.|
+
+<!-- change_assessment_start -->
+**Estimated code review effort:** 2 (Simple) | ~10 minutes
+
+<!-- change_assessment_commit:""3d66de08d9671381a25a3b1735e5a499e7c65bc0"" -->
+**Severity of issue fixed:** Medium
+<!-- change_assessment_end -->
+
+**Suggested reviewers:** `burma-shave`, `3rabiii`
+
+</details>
+
+<!-- walkthrough_end -->
+<!-- final_review_risk_start -->
+**Merge Risk:** _⚪ Minimal_ · up to `3d66d`
+<!-- final_review_risk_coverage:{""sourceCommitId"":""3d66de08d9671381a25a3b1735e5a499e7c65bc0"",""coveredCommitId"":""3d66de08d9671381a25a3b1735e5a499e7c65bc0"",""kind"":""reviewed""} -->
+
+Unparseable dates now return HTTP 400 before agency or stop lookup, while valid dates preserve timezone-aware resolution and 404 behavior for unknown resources. The covered scenarios show no current merge-blocking risk.
+<!-- final_review_risk_end -->
+<!-- pre_merge_checks_walkthrough_start -->
+
+<details>
+<summary>🚥 Pre-merge checks | ✅ 4 | ❌ 1</summary>
+
+### ❌ Failed checks (1 warning)
+
+|     Check name     | Status     | Explanation                                                                                                                                                                                               | Resolution                                                                         |
+| :----------------: | :--------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------- |
+| Docstring Coverage | ⚠️ Warning | Docstring coverage is 40.00% which is insufficient. The required threshold is 80.00%. Docstring coverage is scoped to functions touched by this diff. Analyzed 5 functions across 3 files. (1 skipped: 1… | Write docstrings for the functions missing them to satisfy the coverage threshold. |
+
+<details>
+<summary>✅ Passed checks (4 passed)</summary>
+
+|         Check name         | Status   | Explanation                                                                                                                                                                                               |
+| :------------------------: | :------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|      Description Check     | ✅ Passed | Check skipped - CodeRabbit’s high-level summary is enabled.                                                                                                                                               |
+|         Title check        | ✅ Passed | The title clearly describes the primary change: validating the schedule-for-stop date before the agency lookup.                                                                                           |
+|     Linked Issues check    | ✅ Passed | The changes satisfy issue `#1382`. They validate the date before agency and stop lookups, return a date field error for invalid input, preserve 404 responses for valid dates with unknown resources, reta… |
+| Out of Scope Changes check | ✅ Passed | All changes support the linked issue. The validator rename, test replacement, and CONTRIBUTING.md update are related cleanup required by the validation change.                                           |
+
+</details>
+
+<details>
+<summary>Full details: Docstring Coverage</summary>
+
+**Explanation**
+
+Docstring coverage is 40.00% which is insufficient. The required threshold is 80.00%. Docstring coverage is scoped to functions touched by this diff. Analyzed 5 functions across 3 files. (1 skipped: 1 unsupported.)
+
+</details>
+
+</details>
+
+<!-- pre_merge_checks_walkthrough_end -->
+
+- [ ] <!-- {""checkboxId"":""585bb3f6-faf5-4dbf-96d2-74e382adf19a""} --> Fix all pre-merge checks with AI
+<!-- tips_start -->
+
+---
+
+Thanks for using [CodeRabbit](https://coderabbit.ai?utm_source=oss&utm_medium=github&utm_campaign=OneBusAway/maglev&utm_content=1385)! It's free for OSS, and your support helps us grow. If you like it, consider giving us a shout-out.
+
+<details>
+<summary>❤️ Share</summary>
+
+- [X](https://twitter.com/intent/tweet?text=I%20just%20used%20%40coderabbitai%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20the%20proprietary%20code.%20Check%20it%20out%3A&url=https%3A//coderabbit.ai)
+- [Mastodon](https://mastodon.social/share?text=I%20just%20used%20%40coderabbitai%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20the%20proprietary%20code.%20Check%20it%20out%3A%20https%3A%2F%2Fcoderabbit.ai)
+- [Reddit](https://www.reddit.com/submit?title=Great%20tool%20for%20code%20review%20-%20CodeRabbit&text=I%20just%20used%20CodeRabbit%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20proprietary%20code.%20Check%20it%20out%3A%20https%3A//coderabbit.ai)
+- [LinkedIn](https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fcoderabbit.ai&mini=true&title=Great%20tool%20for%20code%20review%20-%20CodeRabbit&summary=I%20just%20used%20CodeRabbit%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20proprietary%20code)
+
+</details>
+
+
+<sub>Comment `@coderabbitai help` to get the list of available commands.</sub>
+
+<!-- tips_end -->",,,1385-001,false
+1385,5377006205,issue,burma-shave,human,false,false,true,false,@coderabbitai review,,,1385-002,false
+1385,5377006621,issue,coderabbitai[bot],bot,false,false,false,false,"<!-- This is an auto-generated reply by CodeRabbit -->
+<!-- CodeRabbit review command invocation: da61709b-fcf5-4a46-8a04-a0eed124b6d4 -->
+<details>
+<summary>⚠️ Action not completed</summary>
+
+Head commit changed.
+
+> Note: CodeRabbit is an incremental review system and does not re-review already reviewed commits. This command is applicable only when automatic reviews are paused.
+
+</details>",,,1385-003,false
+1385,5459088193,issue,burma-shave,human,false,false,true,false,"@ARCoder181105 checking in on this stack. This base PR still has requested changes open, so we cannot sensibly review further up the stack yet. Could you please address the requested changes here first, then let us know when the base is ready?
+",,,1385-004,false
+1385,5548284191,issue,burma-shave,human,false,false,true,false,"@ARCoder181105 checking in on this stack. This base PR still has requested changes open, so we cannot sensibly review further up the stack yet. Could you please address the requested changes here first, then let us know when the base is ready?
+",,,1385-005,false
+1385,5621807889,issue,ARCoder181105,human,true,false,false,false,"Thanks for the review! Addressed both findings:
+
+**1. Redundant `ValidateDate`** — removed it entirely. `ValidateServiceDate` already covers everything it did (and more, since it also accepts Unix-ms timestamps), so there's no reason to keep the narrower one around. Removed the corresponding `TestValidateDate` and updated the `CONTRIBUTING.md` example to reference `ValidateServiceDate` instead.
+
+**2. Dead error branch on second `ParseDate`** — removed the `if err != nil` block. You're right that it's unreachable: by the time we get there, `ValidateServiceDate` has already confirmed the format is valid, and `loadAgencyLocation` has already confirmed `loc` is usable — neither success path of `ParseDate` depends on `loc` for success vs. failure. Simplified to `startOfDay, _ = utils.ParseDate(dateParam, loc)` and updated the comment accordingly.",,,1385-006,false
+1385,5621817614,issue,sonarqubecloud[bot],bot,false,false,false,false,"## [![Quality Gate Passed](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/checks/QualityGateBadge/qg-passed-20px.png 'Quality Gate Passed')](https://sonarcloud.io/dashboard?id=OneBusAway_maglev&pullRequest=1385) **Quality Gate passed**  
+Issues  
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0 New issues](https://sonarcloud.io/project/issues?id=OneBusAway_maglev&pullRequest=1385&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true)  
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/accepted-16px.png '') [0 Accepted issues](https://sonarcloud.io/project/issues?id=OneBusAway_maglev&pullRequest=1385&issueStatuses=ACCEPTED)
+
+Measures  
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0 Security Hotspots](https://sonarcloud.io/project/security_hotspots?id=OneBusAway_maglev&pullRequest=1385&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true)  
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0.0% Coverage on New Code](https://sonarcloud.io/component_measures?id=OneBusAway_maglev&pullRequest=1385&metric=new_coverage&view=list)  
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0.0% Duplication on New Code](https://sonarcloud.io/component_measures?id=OneBusAway_maglev&pullRequest=1385&metric=new_duplicated_lines_density&view=list)  
+  
+<!-- sqra-placement-anchor -->
+[See analysis details on SonarQube Cloud](https://sonarcloud.io/dashboard?id=OneBusAway_maglev&pullRequest=1385)
+
+",,,1385-007,false
+1385,3834719282,inline,burma-shave,human,false,false,true,false,"`ValidateServiceDate` duplicates the pre-existing `ValidateDate` (line 95) instead of extending or replacing it. `ValidateDate` (YYYY-MM-DD only) appears unused anywhere in production code, so the file now carries two similarly-named date validators with overlapping scope — a future caller or bugfix can easily reach for the wrong one. Worth considering whether `ValidateDate` should be removed or merged into this new function instead of living alongside it.",internal/utils/validation.go,,1385-008,false
+1385,3834719284,inline,burma-shave,human,false,false,true,false,"This comment (""only fails on an unusable agency timezone"") is inaccurate, and the branch below it looks unreachable now. `ValidateServiceDate` (line 36) already runs `ParseDate(dateParam, time.UTC)` and returns 400 on any format/bounds failure; neither of `ParseDate`'s two success paths depends on the `loc` argument for success/failure, so once `ValidateServiceDate` has succeeded, `ParseDate(dateParam, loc)` here can't fail for any valid `loc`. A bad agency timezone is also already caught earlier by `loadAgencyLocation` (lines 48-52), before this second parse runs. Since this branch appears dead, could it be removed (or the comment corrected if there's a case I'm missing)?",internal/restapi/schedule_for_stop_handler.go,,1385-009,false
+1385,4998546853,review_body,burma-shave,human,false,false,true,false,"Two findings from an automated review, both confirmed against this PR's actual diff (`git diff origin/main...HEAD`). Left as inline comments below.
+
+Note: the review also flagged three other issues (a duplicated route-reference builder, a routeless-stop early-return removal, and an unrelated test-file change) but those all point at code outside this PR's diff — pre-existing code this branch didn't touch — so they're left out here rather than posted as inline comments GitHub would reject.",,,1385-010,false
+1385,5035869775,review_body,burma-shave,human,false,false,true,false,"## OBA API Change Review: PR #1385 / current branch — single endpoint
+
+**Input**: Working tree on branch `pr-1385`; open PR #1385 found and local `HEAD` matches PR head SHA.  
+**Stated goal**: Fix #1382 — `schedule-for-stop` should return a 400 `fieldErrors.date` response for an unparseable `date` even when the agency prefix is unknown.  
+**Scope**: Single endpoint.  
+**Affected endpoint(s)**: `schedule-for-stop`.  
+**Changes**: Both production and test changes.
+
+### Overview
+
+**What this change does**
+
+Before this PR, `/api/where/schedule-for-stop/{id}.json` split the combined stop ID, looked up the agency, and only parsed `date` after the agency lookup. That meant:
+
+- `GET /schedule-for-stop/25_<known-stop>.json?date=garbage` returned the expected 400 field error.
+- `GET /schedule-for-stop/99_1001.json?date=garbage`, where agency `99` does not exist, returned 404 before Maglev ever examined the bad date.
+
+The PR adds `utils.ValidateServiceDate`, which delegates to the existing `ParseDate`, and calls it before the agency lookup. The later timezone-aware date resolution still happens after the agency is loaded. So the bad-date / unknown-agency case now returns HTTP 400 with `fieldErrors.date`, while valid-date unknown agency/stop cases still return 404.
+
+**Domain background**
+
+`schedule-for-stop` accepts a combined stop ID shaped like `{agencyId}_{stopId}` and an optional service-date parameter. The service date may be `YYYY-MM-DD` or a Unix millisecond timestamp. For `YYYY-MM-DD`, Maglev eventually needs the agency timezone to resolve “midnight on that date,” but it does not need the agency just to determine whether the string is parseable. The OBA spec requires malformed field values to produce structured field errors before resource lookup failures take precedence.
+
+<details>
+### Goal check
+
+**Goal check: `schedule-for-stop`**
+
+Stated goal: malformed `date` should return 400 `fieldErrors.date` regardless of whether the agency/stop exists; valid-date unknown agency/stop should remain 404; agency timezone should still be used for real date resolution.
+
+- ✓ Invalid date with unknown agency returns 400 before agency lookup.
+- ✓ Invalid date with known agency still returns 400.
+- ✓ Valid date with unknown agency still returns 404.
+- ✓ Valid date with unknown stop still returns 404.
+- ✓ Timezone-aware parsing remains after agency lookup.
+
+Test coverage: Adequate for the central regression. The new test covers unknown-agency bad date, known-agency bad date, unknown-agency valid date, and unknown-stop valid date. Targeted test run passed:
+
+```text
+go test -tags ""sqlite_fts5 sqlite_math_functions"" ./internal/restapi -run TestScheduleForStopHandlerDateValidationPrecedesLookup
+```
+
+Overall: **fully closed**.
+
+### Client impact
+
+Caveat: client checkouts had anomalies: `/workspace/wayfinder` is on branch `develop`, and `/workspace/maglev.wiki` has an untracked file.
+
+**Client impact: `schedule-for-stop`**
+
+| Behaviour | Wayfinder/SDK | iOS | Android |
+|---|---|---|---|
+| Invalid `date` + unknown agency changes from 404 to 400 `fieldErrors.date` | Minimal/direct-call impact only. JS SDK has `date?: string`; Wayfinder passes date through from a date picker and does not intentionally send malformed dates. | No routine impact. iOS builds `yyyy-MM-dd` from `Date`, so malformed dates are not normally sent. | No routine impact. Android endpoint accepts `date: String?`, but normal callers would send valid dates. |
+
+No response payload fields or success shapes change. The observable change is limited to an error-precedence edge case.
+
+### Spec check
+
+**Spec check: `schedule-for-stop`**
+
+- **Consistent** — The wiki spec’s Minimal Guarantees explicitly says: “When the date parameter is unrecognisable, a field-error response is returned before any stop lookup is attempted.”
+- **Consistent** — Extension 2a specifies HTTP 400 with `fieldErrors.date`.
+- **Consistent** — Valid-date unknown stop/agency remains 404 in Maglev, matching the existing Implementation Decision that Maglev intentionally corrects legacy Java’s null-body unknown-stop defect.
+
+Deviation recording: No new deviation needed. This change implements existing Maglev spec behavior rather than introducing a new legacy divergence.
+
+Overall: **spec-consistent**.
+</details>
+
+### Summary
+
+PR #1385 is a narrow `schedule-for-stop` error-precedence fix. It moves date-format validation ahead of agency lookup while preserving timezone-aware service-date resolution after the agency is known. The implementation matches the stated issue and the wiki spec, keeps valid unknown-resource behavior unchanged, and adds focused regression coverage.
+",,,1385-011,false
+1385,5181307568,review_body,burma-shave,human,false,false,true,true,,,,1385-012,false

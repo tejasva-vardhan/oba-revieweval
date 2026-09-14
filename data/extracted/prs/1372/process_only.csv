@@ -1,0 +1,3 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1372,4998204666,review_body,burma-shave,human,false,false,true,true,,,,1372-009,false
+1372,5054907482,review_body,burma-shave,human,false,false,true,true,,,,1372-015,false

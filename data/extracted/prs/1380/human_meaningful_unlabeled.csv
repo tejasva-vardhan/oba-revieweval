@@ -1,0 +1,28 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1380,5406230648,issue,Ahmedhossamdev,human,false,false,true,false,"Hey @yash170603, Could you please fix the format issue and [sonarqubecloud](https://github.com/apps/sonarqubecloud) issue?
+<img width=""754"" height=""440"" alt=""image"" src=""https://github.com/user-attachments/assets/45f2ed00-5b2c-45f9-a2fa-5d1a81928bc2"" />
+",,,1380-003,false
+1380,5055722905,review_body,burma-shave,human,false,false,true,false,"I think this PR is moving in the right direction, but I’m requesting changes because it only fixes half of the legacy/reference contract.
+
+Looking at legacy Java, route references are hydrated from the routes already exposed by each stop: `BeanFactoryV2.getStop()` adds each route ID to the stop and calls `addToReferences(route)`. `getRoute(route)` then preserves the route’s own agency and also calls `addToReferences(route.getAgency())`.
+
+So I don’t think `BuildRouteReferences` should be a strict “requested agency only” filter. Its contract should be: for every route ID already exposed by the stops, add the matching route reference using that route’s real agency. This PR mostly does that.
+
+The remaining gap is that the callers still usually populate `data.references.agencies` with only the requested/current agency. After this change, `data.references.routes` can include a cross-agency route such as `{ id: ""A2_r300"", agencyId: ""A2"" }`, but `data.references.agencies` may still omit `A2`. That leaves the route’s `agencyId` unresolved in the references block, whereas legacy’s `addToReferences(route)` would include the owning agency too.
+
+Could you update the PR so every agency owning a returned route reference is also included in `references.agencies`, and add an endpoint-level test for a cross-agency stop/route case? The helper-level tests are useful, but the response-level invariant we need to protect is:
+
+> every `references.routes[].agencyId` has a matching agency in `references.agencies`.
+
+Once that invariant is covered, this should line up much better with both #1046 and the planned multi-agency support direction.",,,1380-020,false
+1380,5093782675,review_body,burma-shave,human,false,false,true,false,"Thanks for the update — the new `stops-for-agency` endpoint-level test and handler change address the specific gap I called out there.
+
+I agree with your note that `stops_for_route_handler.go` has the same issue. Since this PR changes `BuildRouteReferences` from a caller-agency relabeling helper into a true route-reference hydrator that preserves each route’s owning agency, all direct callers that publish those route refs need to preserve the same response invariant:
+
+> every `references.routes[].agencyId` must have a matching agency in `references.agencies`.
+
+Right now `stops-for-agency` now does that, but `stops-for-route` still builds route refs through `BuildRouteReferences` and only seeds `references.agencies` with the queried route’s agency. A shared stop served by another agency’s route can therefore return a route reference whose `agencyId` is not present in `references.agencies`.
+
+Could you please extend this PR to cover the `stops-for-route` call site too, with a small endpoint-level test for the same cross-agency stop/route response invariant? That keeps the shared helper’s new contract consistent at its other directly affected endpoint.
+
+`trip-details` may also have a similar schedule-reference path",,,1380-022,false

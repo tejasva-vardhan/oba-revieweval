@@ -1,0 +1,25 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1329,5288323142,issue,aaronbrethorst,human,false,false,true,false,"### Code review
+
+No issues found. Checked for bugs and CLAUDE.md compliance.
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+",,,1329-003,false
+1329,4933040824,review_body,aaronbrethorst,human,false,false,true,false,"This looks good — ready to merge.
+
+Two genuine bugs fixed here, and I read through the whole handler diff to confirm both:
+
+The per-agency midnight is correct. Loading a `*time.Location` for every agency and resolving each trip's service day in its own agency's zone is the right fix, and passing the request struct into `buildTripsForLocationEntries` instead of eleven positional parameters is a real readability win on its own.
+
+The block-cache fix is the one I'd have missed. Keying `blockTripsMap` on `(agencyID, blockID)` and filtering `GetTripsByBlockIDs` rows by route to agency stops agencies that reuse raw `block_id` values from linking trips across agencies. That is a data-correctness bug, not a cosmetic one.
+
+The LA/Chicago fixture test earns its keep — `ListAgencies` orders by ID, so `agencies[0]` is Chicago, which means the old code really would have stamped Chicago midnight on the LA trip. It fails on main.
+
+Two follow-ups, neither blocking:
+
+`serviceDateMidnight` would be better placed in `timezone_helper.go` than local to this handler — issue #1325 says `trips_for_route_handler.go`, `stops_for_route_handler.go`, and the `schedule_for_*` handlers need the same treatment, so it will get reused. The name also differs from `utils.ServiceDateMidnight` only by case while taking a different signature, which is worth disambiguating when you move it.
+
+`time.LoadLocation` is not memoized by Go, so a merged statewide feed now does N zoneinfo loads per request on an endpoint that's in the k6 load test. Caching the agency-to-location map would remove that.
+
+Heads up on sequencing: #1316 rewrites these same lines to resolve *which day* a trip belongs to, while this PR resolves *which timezone's midnight*. They're complementary in intent but conflict in code, and whichever lands second needs a real merge rather than a rebase. I'm landing this one first, so #1316 will need to rebase onto the per-agency midnight rather than reintroducing `TodayMidnight`.
+",,,1329-012,false

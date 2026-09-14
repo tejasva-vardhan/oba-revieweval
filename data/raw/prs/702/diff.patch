@@ -1,4 +1,7 @@
 diff --git a/gtfsdb/helpers.go b/gtfsdb/helpers.go
+index 4d50d586..a23f7b60 100644
+--- a/gtfsdb/helpers.go
++++ b/gtfsdb/helpers.go
 @@ -160,6 +160,33 @@ func performDatabaseMigration(ctx context.Context, db *sql.DB) error {
  	return nil
  }
@@ -392,10 +395,10 @@ diff --git a/gtfsdb/helpers.go b/gtfsdb/helpers.go
 +		qtx := q.WithTx(tx)
  
 -		indexID, err := qtx.CreateBlockTripIndex(ctx, CreateBlockTripIndexParams{
--			IndexKey: indexKey,
--			ServiceIds: key.serviceIDs,
+-			IndexKey:        indexKey,
+-			ServiceIds:      key.serviceIDs,
 -			StopSequenceKey: key.stopSequenceKey,
--			CreatedAt: createdAt,
+-			CreatedAt:       createdAt,
 -		})
 -		if err != nil {
 -			return fmt.Errorf("failed to create block trip index: %w", err)
@@ -415,16 +418,16 @@ diff --git a/gtfsdb/helpers.go b/gtfsdb/helpers.go
 -		// Insert block_trip_entry records for each trip in this index
 -		for sequence, trip := range trips {
 -			err = qtx.CreateBlockTripEntry(ctx, CreateBlockTripEntryParams{
--				BlockTripIndexID: indexID,
--				TripID: trip.tripID,
--				BlockID: toNullString(trip.blockID),
--				ServiceID: trip.serviceID,
+-				BlockTripIndexID:  indexID,
+-				TripID:            trip.tripID,
+-				BlockID:           toNullString(trip.blockID),
+-				ServiceID:         trip.serviceID,
 -				BlockTripSequence: int64(sequence),
 +			indexID, err := qtx.CreateBlockTripIndex(ctx, CreateBlockTripIndexParams{
-+				IndexKey: indexKey,
-+				ServiceIds: key.serviceIDs,
++				IndexKey:        indexKey,
++				ServiceIds:      key.serviceIDs,
 +				StopSequenceKey: key.stopSequenceKey,
-+				CreatedAt: createdAt,
++				CreatedAt:       createdAt,
  			})
  			if err != nil {
 -				return fmt.Errorf("failed to create block trip entry: %w", err)
@@ -447,10 +450,10 @@ diff --git a/gtfsdb/helpers.go b/gtfsdb/helpers.go
 +			// Insert block_trip_entry records for each trip in this index
 +			for sequence, trip := range trips {
 +				err = qtx.CreateBlockTripEntry(ctx, CreateBlockTripEntryParams{
-+					BlockTripIndexID: indexID,
-+					TripID: trip.tripID,
-+					BlockID: toNullString(trip.blockID),
-+					ServiceID: trip.serviceID,
++					BlockTripIndexID:  indexID,
++					TripID:            trip.tripID,
++					BlockID:           toNullString(trip.blockID),
++					ServiceID:         trip.serviceID,
 +					BlockTripSequence: int64(sequence),
 +				})
 +				if err != nil {
@@ -466,42 +469,51 @@ diff --git a/gtfsdb/helpers.go b/gtfsdb/helpers.go
  
  	totalEntries := 0
 diff --git a/internal/models/schedule_for_route.go b/internal/models/schedule_for_route.go
+index c33bb081..244015b6 100644
+--- a/internal/models/schedule_for_route.go
++++ b/internal/models/schedule_for_route.go
 @@ -29,6 +29,4 @@ type ScheduleForRouteEntry struct {
- 	ScheduleDate int64 `json:"scheduleDate"`
- 	ServiceIDs []string `json:"serviceIds"`
+ 	ScheduleDate      int64              `json:"scheduleDate"`
+ 	ServiceIDs        []string           `json:"serviceIds"`
  	StopTripGroupings []StopTripGrouping `json:"stopTripGroupings"`
--	Stops []Stop `json:"stops"`
--	Trips []Trip `json:"trips"`
+-	Stops             []Stop             `json:"stops"`
+-	Trips             []Trip             `json:"trips"`
  }
 diff --git a/internal/restapi/schedule_for_route_handler.go b/internal/restapi/schedule_for_route_handler.go
+index fbc84b94..58383693 100644
+--- a/internal/restapi/schedule_for_route_handler.go
++++ b/internal/restapi/schedule_for_route_handler.go
 @@ -84,8 +84,6 @@ func (api *RestAPI) scheduleForRouteHandler(w http.ResponseWriter, r *http.Reque
- 			ScheduleDate: scheduleDate,
- 			ServiceIDs: []string{},
+ 			ScheduleDate:      scheduleDate,
+ 			ServiceIDs:        []string{},
  			StopTripGroupings: []models.StopTripGrouping{},
--			Stops: []models.Stop{},
--			Trips: []models.Trip{},
+-			Stops:             []models.Stop{},
+-			Trips:             []models.Trip{},
  		}
  		api.sendResponse(w, r, models.NewEntryResponse(entry, *models.NewEmptyReferences(), api.Clock))
  		return
 @@ -113,8 +111,6 @@ func (api *RestAPI) scheduleForRouteHandler(w http.ResponseWriter, r *http.Reque
- 			ScheduleDate: scheduleDate,
- 			ServiceIDs: combinedServiceIDs,
+ 			ScheduleDate:      scheduleDate,
+ 			ServiceIDs:        combinedServiceIDs,
  			StopTripGroupings: []models.StopTripGrouping{},
--			Stops: []models.Stop{},
--			Trips: []models.Trip{},
+-			Stops:             []models.Stop{},
+-			Trips:             []models.Trip{},
  		}
  		api.sendResponse(w, r, models.NewEntryResponse(entry, *models.NewEmptyReferences(), api.Clock))
  		return
 @@ -308,8 +304,6 @@ func (api *RestAPI) scheduleForRouteHandler(w http.ResponseWriter, r *http.Reque
- 		ScheduleDate: scheduleDate,
- 		ServiceIDs: combinedServiceIDs,
+ 		ScheduleDate:      scheduleDate,
+ 		ServiceIDs:        combinedServiceIDs,
  		StopTripGroupings: stopTripGroupings,
--		Stops: references.Stops,
--		Trips: references.Trips,
+-		Stops:             references.Stops,
+-		Trips:             references.Trips,
  	}
  	api.sendResponse(w, r, models.NewEntryResponse(entry, *references, api.Clock))
  }
 diff --git a/internal/restapi/schedule_for_route_handler_test.go b/internal/restapi/schedule_for_route_handler_test.go
+index 1a8bb0c5..c0c631f2 100644
+--- a/internal/restapi/schedule_for_route_handler_test.go
++++ b/internal/restapi/schedule_for_route_handler_test.go
 @@ -40,6 +40,7 @@ func TestScheduleForRouteHandler(t *testing.T) {
  		entry, ok := data["entry"].(map[string]interface{})
  		require.True(t, ok)

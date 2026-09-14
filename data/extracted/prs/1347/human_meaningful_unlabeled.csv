@@ -1,0 +1,85 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1347,5314064685,issue,ARCoder181105,human,false,false,true,false,"@soumajitgh can you rebase and squash the PR into single atomic commit , as the commit history still consist the anomaly of `\n` we have to remove that..",,,1347-002,false
+1347,5339161176,issue,aaronbrethorst,human,false,false,true,false,"### Code review
+
+No issues found. Checked for bugs and CLAUDE.md compliance.
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+",,,1347-005,false
+1347,3794252743,inline,ARCoder181105,human,false,false,true,false,"This test passes on the pre-change code too — revert the one-line change and it still goes green, because `GetAlertsForTrip` resolved the same alert with the same agency and the same ID. Good coverage of the situationIds↔references invariant, but it doesn't pin what this PR changed.
+
+Asserting the IDs came from the status would:
+
+```suggestion
+	require.NotNil(t, affectedArrival.TripStatus)
+	assert.Equal(t, affectedArrival.TripStatus.SituationIDs, affectedArrival.SituationIDs,
+		""arrival situationIds must be the ones BuildTripStatus resolved, not a second lookup"")
+	assert.Contains(t, affectedArrival.SituationIDs, wantSituationID,
+```
+
+That's exactly the property the commit message claims, and it breaks if someone reintroduces a separate lookup.",internal/restapi/arrivals_and_departures_for_stop_handler_test.go,,1347-006,false
+1347,4948889647,review_body,ARCoder181105,human,false,false,true,false,"Traced both paths — the refactor is output-identical, and the perf win is real.
+
+`GetAlertsForTrip` and `situationRefsForTrip` both do `GetTrip` → `GetRoute` → `GetAlertsByIDs(tripID, routeID, agencyID)` and both end at `situationRefsFromAlerts(alerts, agencyID)`. Same alerts, same IDs — so this drops one duplicated `GetTrip`+`GetRoute`+alert-index scan per arrival row, which matters on wide `minutesBefore`/`minutesAfter` windows. It also makes the plural handler match the singular one (`arrival_and_departure_for_stop_handler.go:401`).
+
+One request, two notes.
+
+**1. `arrivals_and_departures_for_stop_handler_test.go:135` — the test passes on the pre-change code too.**
+
+Revert the one-line change and it still goes green, because the old path resolved the same alert with the same ID. Good coverage of the situationIds↔references invariant, but it doesn't pin what this PR changed. Asserting the IDs came from the status would, replacing line 135:
+
+```go
+	require.NotNil(t, affectedArrival.TripStatus)
+	assert.Equal(t, affectedArrival.TripStatus.SituationIDs, affectedArrival.SituationIDs,
+		""arrival situationIds must be the ones BuildTripStatus resolved, not a second lookup"")
+	assert.Contains(t, affectedArrival.SituationIDs, wantSituationID,
+```
+
+That's exactly the property the commit claims, and it breaks if someone reintroduces a separate lookup.
+
+**2. `arrivals_and_departures_for_stop_handler.go:448` — consistency nit only, fine to leave.**
+
+`statusExtras.snapshot` is read inside `if status != nil` (line 393) while `statusExtras.situations` is read outside it, so the two reads of the same struct look like they have different safety requirements. Both guards are in fact unreachable — every return in `BuildTripStatus` (`trips_helper.go:103`, `108`, `366`) passes a non-nil `status` and a non-nil `extras`. No change needed.
+
+*Correcting my earlier version of this point:* I suggested `api.tripSituationsFor(ctx, st.TripID, statusExtras)` here. That was wrong — it returns `([]string, []models.Situation)` and bypasses the `situationCollector`, which this handler needs so dedupe stays in one place and `references.Situations` is built once at line 624. Using it would mean hand-appending and hand-deduping per arrival. A nil guard would also be dead code, and risks leaving `situationIDs` nil, which marshals as `""situationIds"": null` instead of `[]`; the current `addRefs` avoids that via `make([]string, 0, len(refs))`. The code as written is correct.
+
+**3. Commit message body has literal `\n` instead of newlines** — renders as one unwrapped line. Worth an amend while it's a single commit.
+
+Verified against the deployed Puget Sound server: stop `1_10190` (Route 70 reroute) returns `1_86736` on each affected arrival with a matching `references.situations` entry — the shape this PR preserves. Two notes from that, both out of scope here:
+
+- Alert IDs arrive already prefixed (`1_86736`), so the idempotency guard in `situationID()` is load-bearing.
+- Prod returns `entry.situationIds: []` at the top level on that stop, while we emit the union of every collected ref. Pre-existing, but this PR now feeds that union from a new source, so it may be worth a separate look.",,,1347-008,false
+1347,4969730321,review_body,aaronbrethorst,human,false,false,true,false,"Four lines of production code for a real win on an endpoint where
+`minutesBefore`/`minutesAfter` can each be 24 hours. Good trade.
+
+I didn't take the equivalence on faith — I traced both sides.
+`GetAlertsForTrip` (internal/gtfs/realtime.go:154) and `situationRefsForTrip`
+(internal/restapi/trips_helper.go:833) do the same resolution: `GetTrip` →
+`GetRoute` → `GetAlertsByIDs(tripID, routeID, agencyID)`, both feeding
+`situationRefsFromAlerts` with the same agency. So the reused set is
+trip+route+agency scoped exactly as before, `addRefs` allocates a fresh slice
+per call and dedupes on the same key, and `references.situations` composition is
+unchanged. Worth noting for the record: issue #1341's premise that
+`GetAlertsForTrip` ""matches on trip alone"" is stale — the two sets were already
+identical, so this is a pure performance refactor rather than a behavior fix.
+That's a better outcome, not a worse one, but it's worth being precise about.
+
+Also a nice side effect: the line you removed was the handler's only `r.Context()`
+use, which bypassed the snapshot-cache-wrapped `ctx` established earlier in the
+function. Everything now flows through the right context.
+
+Two notes, neither blocking:
+
+- The new test is a good invariant guard (situationIds ↔ references.situations),
+  but it doesn't actually pin *this* change — since both paths resolve the same
+  set, it passes on pre-change code too. @ARCoder181105 made this point on the
+  earlier revision and it still stands; the test is worth keeping, just not for
+  the reason the description gives.
+- This PR removes the last production caller of
+  `Manager.GetAlertsForTrip` — after it lands, only `realtime_test.go` exercises
+  it. CONTRIBUTING.md calls out leftover dead code specifically. I'd rather not
+  grow a 4-line perf PR to cover it, but a quick follow-up deleting that method
+  and its test would be welcome if you want to take it.
+
+Merging.
+",,,1347-012,false

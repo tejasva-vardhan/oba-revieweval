@@ -1,0 +1,128 @@
+{
+  "issue_comments": [
+    {
+      "id": 5196403078,
+      "source": "issue",
+      "login": "coderabbitai[bot]",
+      "user_type": "Bot",
+      "body": " \n \n\n \n\n \n \n\nNo actionable comments were generated in the recent review. \ud83c\udf89\n\n \n \u2139\ufe0f Recent review info \n\n \n \u2699\ufe0f Run configuration \n\n**Configuration used**: Repository UI\n\n**Review profile**: ASSERTIVE\n\n**Plan**: Advanced\n\n**Run ID**: `d3be1dd2-7e20-4fb3-96c3-3938fc5ca417`\n\n \n\n \n \ud83d\udce5 Commits \n\nReviewing files that changed from the base of the PR and between 40354fee787e4a6980da2ca8d8db0e0e851c6be5 and 8ff8c1acbb79ab5c408b778a125cccd3f7c8bc50.\n\n \n\n \n \ud83d\udcd2 Files selected for processing (1) \n\n* `internal/restapi/trips_for_route_handler_test.go`\n\n \n\n**Included review availability:** Your plan provides up to 1 included review per hour; 0 remain after this review.\n\n \n\n---\n\n\n\n \n \n\n \n \ud83d\udcdd Walkthrough \n\n## Walkthrough\n\nThe test suite adds a scheduled vehicle-position fixture for `trips-for-route`. It verifies coordinates, block sequence, occupancy defaults, non-nil empty slices, status, and phase.\n\n### Changes\n\n**Trips-for-route status coverage**\n\n|Layer / File(s)|Summary|\n|---|---|\n|**Exercise realtime status fields** `internal/restapi/trips_for_route_handler_test.go`|The test adds deterministic identifiers and coordinates, injects a scheduled vehicle with realtime data, and verifies status fields returned by the trips-for-route handler.|\n\n**Estimated code review effort:** 2 (Simple) | ~10 minutes\n\n \n**Merge Risk:** _\u26aa Minimal_ \u00b7 up to `8ff8c`\n \n\nThis change adds automated coverage for realtime trips-for-route status fields without modifying production behavior. No merge-blocking risk is currently established.\n \n\n**Suggested reviewers:** `burma-shave`, `arcoder181105`, `johnakindipe`\n\n \n\n \n \n\n \n \ud83d\udea5 Pre-merge checks | \u2705 5 \n\n \n \u2705 Passed checks (5 passed) \n\n| Check name | Status | Explanation |\n| :------------------------: | :------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |\n| Description Check | \u2705 Passed | Check skipped - CodeRabbit\u2019s high-level summary is enabled. |\n| Title check | \u2705 Passed | The title clearly and concisely describes the main change: adding end-to-end test coverage for status sub-object fields in the trips-for-route API response. |\n| Docstring Coverage | \u2705 Passed | Docstring coverage is 100.00% which is sufficient. The required threshold is 80.00%. Docstring coverage is scoped to functions touched by this diff. Analyzed 4 functions across 1 files. |\n| Linked Issues check | \u2705 Passed | Check skipped because no linked issues were found for this pull request. |\n| Out of Scope Changes check | \u2705 Passed | Check skipped because no linked issues were found for this pull request. |\n\n \n\n \n\n \n \n\n---\n\nThanks for using [CodeRabbit](https://coderabbit.ai?utm_source=oss&utm_medium=github&utm_campaign=OneBusAway/maglev&utm_content=1300)! It's free for OSS, and your support helps us grow. If you like it, consider giving us a shout-out.\n\n \n \u2764\ufe0f Share \n\n- [X](https://twitter.com/intent/tweet?text=I%20just%20used%20%40coderabbitai%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20the%20proprietary%20code.%20Check%20it%20out%3A&url=https%3A//coderabbit.ai)\n- [Mastodon](https://mastodon.social/share?text=I%20just%20used%20%40coderabbitai%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20the%20proprietary%20code.%20Check%20it%20out%3A%20https%3A%2F%2Fcoderabbit.ai)\n- [Reddit](https://www.reddit.com/submit?title=Great%20tool%20for%20code%20review%20-%20CodeRabbit&text=I%20just%20used%20CodeRabbit%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20proprietary%20code.%20Check%20it%20out%3A%20https%3A//coderabbit.ai)\n- [LinkedIn](https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fcoderabbit.ai&mini=true&title=Great%20tool%20for%20code%20review%20-%20CodeRabbit&summary=I%20just%20used%20CodeRabbit%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20proprietary%20code)\n\n \n\n\n Comment `@coderabbitai help` to get the list of available commands. \n\n ",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-05T19:32:21Z"
+    },
+    {
+      "id": 5230228349,
+      "source": "issue",
+      "login": "aaronbrethorst",
+      "user_type": "User",
+      "body": "### Code review\n\nFound 1 issue:\n\n1. `assert.GreaterOrEqual(t, entry.Status.BlockTripSequence, 0)` cannot fail, so it provides no regression coverage for the field the PR is meant to pin down. `BuildTripStatus` computes the sequence via `calculateBlockTripSequence`, which returns `0` on any failure (\"Returns 0 when the sequence is unavailable\"), and then only assigns it with `if blockTripSequence > 0` (`internal/restapi/trips_helper.go:62-65`) \u2014 the field is non-negative by construction on this path. The synthetic fixture also makes the value fully deterministic: `tfr-trip` is the only trip in block `tfr-block`, and `GetBlockTripSequence` is zero-based (`ROW_NUMBER() ... - 1`), so the expected value is exactly `0`. If `BuildTripStatus` stopped computing `blockTripSequence` entirely, this assertion would still pass. `assert.Equal(t, 0, entry.Status.BlockTripSequence)` would actually pin the behavior. (The neighbouring `position` / `occupancyCount` / `situationIds` / `vehicleFeatures` assertions are load-bearing \u2014 only this one is vacuous.)\n\nhttps://github.com/OneBusAway/maglev/blob/9805ac48a7c5c68adb6bde59ef139c25bd7b3d8d/internal/restapi/trips_for_route_handler_test.go#L228-L234\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.ai/code)\n\n - If this code review was useful, please react with \ud83d\udc4d. Otherwise, react with \ud83d\udc4e. \n",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-09T06:49:21Z"
+    },
+    {
+      "id": 5288289436,
+      "source": "issue",
+      "login": "aaronbrethorst",
+      "user_type": "User",
+      "body": "### Code review\n\nNo issues found. Checked for bugs and CLAUDE.md compliance.\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.ai/code)\n",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-14T01:17:19Z"
+    },
+    {
+      "id": 5459087860,
+      "source": "issue",
+      "login": "burma-shave",
+      "user_type": "User",
+      "body": "@3rabiii checking in on this older PR. It is still blocked on merge conflicts from the last review. Could you please merge `main`, resolve the conflicts, and let us know when it is ready for re-review?\n",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-29T00:14:20Z"
+    },
+    {
+      "id": 5548284567,
+      "source": "issue",
+      "login": "burma-shave",
+      "user_type": "User",
+      "body": "@3rabiii checking in on this older PR. It is still blocked on merge conflicts from the last review. Could you please merge `main`, resolve the conflicts, and let us know when it is ready for re-review?\n",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-09-05T01:05:40Z"
+    },
+    {
+      "id": 5611458183,
+      "source": "issue",
+      "login": "sonarqubecloud[bot]",
+      "user_type": "Bot",
+      "body": "## [![Quality Gate Passed](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/checks/QualityGateBadge/qg-passed-20px.png 'Quality Gate Passed')](https://sonarcloud.io/dashboard?id=OneBusAway_maglev&pullRequest=1300) **Quality Gate passed** \nIssues \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0 New issues](https://sonarcloud.io/project/issues?id=OneBusAway_maglev&pullRequest=1300&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true) \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/accepted-16px.png '') [0 Accepted issues](https://sonarcloud.io/project/issues?id=OneBusAway_maglev&pullRequest=1300&issueStatuses=ACCEPTED)\n\nMeasures \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0 Security Hotspots](https://sonarcloud.io/project/security_hotspots?id=OneBusAway_maglev&pullRequest=1300&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true) \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0.0% Coverage on New Code](https://sonarcloud.io/component_measures?id=OneBusAway_maglev&pullRequest=1300&metric=new_coverage&view=list) \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0.0% Duplication on New Code](https://sonarcloud.io/component_measures?id=OneBusAway_maglev&pullRequest=1300&metric=new_duplicated_lines_density&view=list) \n \n \n[See analysis details on SonarQube Cloud](https://sonarcloud.io/dashboard?id=OneBusAway_maglev&pullRequest=1300)\n\n",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-09-10T01:50:37Z"
+    }
+  ],
+  "inline_comments": [],
+  "review_bodies": [
+    {
+      "id": 4890748463,
+      "source": "review_body",
+      "login": "aaronbrethorst",
+      "user_type": "User",
+      "body": "Most of this test is load-bearing. Injecting a real GTFS-RT vehicle with a GPS fix and asserting on `status.position.lat/lon`, the `-1` `occupancyCount` sentinel, and non-null-but-empty `situationIds`/`vehicleFeatures` would all catch real regressions \u2014 and the `[]` vs `null` checks in particular guard something easy to break and hard to notice. I confirmed none of it contradicts `openapi.yml`'s `TripStatus` schema.\n\nThe one field the PR headlines first, though, asserts nothing.\n\n**`assert.GreaterOrEqual(t, entry.Status.BlockTripSequence, 0)` can never fail.** `calculateBlockTripSequence` returns 0 on any failure, and `BuildTripStatus` only assigns the field under `if blockTripSequence > 0` (`trips_helper.go:62-65`) \u2014 so it's non-negative by construction, whatever happens. The fixture is fully deterministic here (a single trip in `tfr-block`, and `GetBlockTripSequence` is zero-based), so the real assertion is `assert.Equal(t, 0, ...)`. One-line change.\n\nI know `GreaterOrEqual(seq, 0)` appears elsewhere in the suite, but those run over RABA data where the value genuinely isn't pinned. Over a controlled fixture \u2014 and in a PR whose stated goal is strict assertions \u2014 it's worth being exact.\n\nThe branch also conflicts with `main`, and more deeply than it looks: `createTestApiWithTripsForRouteFixture`, the helper this refactors, was removed in `c905b6c8` and replaced by a generic `createTestApiWithGTFSFixture(t, clock, zipName, files)` plus per-scenario file maps. So the `buildTripsForRouteFixtureZip` extraction is now redundant, and `createTestApiWithScheduledRealtimePosition` needs rebuilding on top of the new builder. That landed while this sat in the queue \u2014 not your doing. `TestTripsForRouteHandler_StatusFields` itself should transplant cleanly once the fixture dependency is sorted.\n\nOne last thing: the helper doc and test comment both emphasize \"a SCHEDULED vehicle\", but the feed never sets `ScheduleRelationship` (it relies on the proto default) and the test never asserts `Status`/`Phase`. Either assert it or soften the comment.\n\nHappy to re-review once it's rebased.\n",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-09T07:10:54Z"
+    },
+    {
+      "id": 4932969439,
+      "source": "review_body",
+      "login": "burma-shave",
+      "user_type": "User",
+      "body": "merge main and fix conflicts",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-14T01:18:03Z"
+    },
+    {
+      "id": 4933041171,
+      "source": "review_body",
+      "login": "aaronbrethorst",
+      "user_type": "User",
+      "body": "Approving on the merits \u2014 this looks good, but it can't merge as-is. See below.\n\nAll three points from my last review are addressed: `GreaterOrEqual(seq, 0)` is now a real equality assertion, the redundant fixture-zip extraction is gone in favor of `createTestApiWithGTFSFixture`, and the \"SCHEDULED vehicle\" claim is asserted rather than narrated.\n\nI checked the parts that could have made this test quietly meaningless and they're sound. `InitGTFSManager` does a synchronous first RT fetch before `MarkReady()`, so there's no race. The fixture has no `shapes.txt`, which means `BuildTripStatus` skips shape projection and `status.Position` stays the raw GPS fix \u2014 so the `float64(float32(...))` expectation is correct rather than accidentally correct. And the `situationIds`/`vehicleFeatures` assertions are load-bearing, since decoding `null` into `[]string` yields nil and `require.NotNil` distinguishes `[]` from `null`.\n\nTwo things blocking the merge, neither of them the code:\n\n1. The branch conflicts with `main` \u2014 that file gained ~198 lines after your 08-11 rebase, touching the import block and the fixture region you also edit. Mechanical to resolve, but it needs doing.\n2. burma-shave has a change request still open here. My approval doesn't dismiss it, so please square that before merging.\n\nTwo notes for the rebase:\n\n- `createTestApiWithScheduledRealtimePosition` takes a `clock.Clock` parameter but hardcodes `tripsForRouteTestClock` for the feed header and vehicle timestamps. A future caller passing a different clock more than 15 minutes away would silently trip `StaleDetector` and get `default`/`scheduled` instead of a clear failure. Deriving the timestamp from `c.Now()` removes the trap.\n- The `occupancyCount` assertion's message says \"when the feed omits occupancy data,\" but `NewTripStatus()` sets -1 unconditionally and nothing on this path overwrites it \u2014 the assertion pins a constructor default, not feed-driven behavior.\n\nOne coordination note: #1298 adds a second real-time fixture builder to this same file using a different injection mechanism (`SetRealTimeVehiclesForTest` rather than an httptest feed). If both land we end up with two overlapping patterns \u2014 worth settling which one wins before the second merges.\n",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-14T01:36:14Z"
+    },
+    {
+      "id": 4977470107,
+      "source": "review_body",
+      "login": "burma-shave",
+      "user_type": "User",
+      "body": "conflicts need to be resolved again",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-19T22:54:27Z"
+    },
+    {
+      "id": 5161962733,
+      "source": "review_body",
+      "login": "burma-shave",
+      "user_type": "User",
+      "body": "",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-09-10T02:16:59Z"
+    }
+  ]
+}

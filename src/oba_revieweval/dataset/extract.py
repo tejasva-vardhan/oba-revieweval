@@ -9,7 +9,11 @@ import csv
 from pathlib import Path
 from typing import Any
 
-from oba_revieweval.dataset.actors import classify_actor, is_forbidden_gold_author
+from oba_revieweval.dataset.actors import (
+    classify_actor,
+    is_forbidden_gold_author,
+    is_process_only_text,
+)
 
 EXTRACT_FIELDS = (
     "pr_id",
@@ -20,6 +24,7 @@ EXTRACT_FIELDS = (
     "is_pr_author",
     "is_study_author",
     "eligible_as_independent_gold_candidate",
+    "is_process_only",
     "text",
     "path",
     "class",
@@ -45,6 +50,7 @@ def extract_rows(collected: dict[str, Any]) -> list[dict[str, str]]:
         independent = actor == "human" and not is_pr_author and not is_study
         source = item.get("source") or ("inline" if item.get("inline") else "issue")
         comment_id = item.get("id")
+        process_only = is_process_only_text(item.get("body")) and not bool(item.get("inline"))
         rows.append(
             {
                 "pr_id": pr_id,
@@ -55,6 +61,7 @@ def extract_rows(collected: dict[str, Any]) -> list[dict[str, str]]:
                 "is_pr_author": "true" if is_pr_author else "false",
                 "is_study_author": "true" if is_study else "false",
                 "eligible_as_independent_gold_candidate": "true" if independent else "false",
+                "is_process_only": "true" if process_only else "false",
                 "text": item.get("body") or "",
                 "path": item.get("path") or "",
                 "class": "",
@@ -66,7 +73,15 @@ def extract_rows(collected: dict[str, Any]) -> list[dict[str, str]]:
 
 
 def partition_rows(rows: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
-    groups = {"human": [], "bot": [], "author": [], "study_author": [], "unclassified": []}
+    groups = {
+        "human": [],
+        "human_meaningful": [],
+        "process_only": [],
+        "bot": [],
+        "author": [],
+        "study_author": [],
+        "unclassified": [],
+    }
     for row in rows:
         if row["is_study_author"] == "true":
             groups["study_author"].append(row)
@@ -80,6 +95,10 @@ def partition_rows(rows: list[dict[str, str]]) -> dict[str, list[dict[str, str]]
             groups["bot"].append(row)
         elif actor == "human":
             groups["human"].append(row)
+            if row.get("is_process_only") == "true":
+                groups["process_only"].append(row)
+            else:
+                groups["human_meaningful"].append(row)
         else:
             groups["unclassified"].append(row)
     return groups

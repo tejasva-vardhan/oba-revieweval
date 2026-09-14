@@ -1,0 +1,1048 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1313,5220794555,issue,coderabbitai[bot],bot,false,false,false,false,"<!-- This is an auto-generated comment: summarize by coderabbit.ai -->
+<!-- review_stack_entry_start -->
+
+[![Review Change Stack](https://storage.googleapis.com/coderabbit_public_assets/review-stack-in-coderabbit-ui.svg)](https://app.coderabbit.ai/change-stack/OneBusAway/maglev/pull/1313?utm_source=github_walkthrough&utm_medium=github&utm_campaign=change_stack)
+
+<!-- review_stack_entry_end -->
+<!-- This is an auto-generated comment: rate limited by coderabbit.ai -->
+
+> [!WARNING]
+> ## Review limit reached
+> 
+> `@burma-shave`, you've reached your PR review limit, so we couldn't start this review.
+> 
+> **Next review available in:** **25 minutes**
+> 
+> You've used all free OSS reviews for now. Wait for the free limit to reset to keep reviewing this public repository.
+> 
+> <details>
+> <summary>How can I continue?</summary>
+> 
+> After more reviews become available, a review can be triggered using the `@coderabbitai review` command as a PR comment. Alternatively, push new commits to this PR.
+> 
+> To avoid repeated limits, reduce automatic review volume by pausing incremental auto-reviews earlier, using label-based review opt-in, excluding WIP or generated PR titles, or requesting reviews manually when the PR is ready. If your team needs uninterrupted high-volume reviews, an organization admin can enable usage-based reviews.
+> 
+> </details>
+> 
+> 
+> <details>
+> <summary>How do review limits work?</summary>
+> 
+> CodeRabbit enforces per-developer PR review limits for each organization. Most developers receive the normal plan review availability.
+> 
+> For paid Pro and Pro+ PR reviews, CodeRabbit uses adaptive limits for sustained high-volume activity. When a developer's recent PR review activity reaches the 95th percentile or higher among CodeRabbit users, additional reviews become available more gradually as earlier reviews age out of the rolling window.
+> 
+> Please refer [docs](https://docs.coderabbit.ai/management/plans#rate-limits) for additional details.
+> 
+> </details>
+> 
+> <details>
+> <summary>Review details</summary>
+> 
+> <details>
+> <summary>⚙️ Run configuration</summary>
+> 
+> **Configuration used**: Repository UI
+> 
+> **Review profile**: ASSERTIVE
+> 
+> **Plan**: Pro Plus
+> 
+> **Run ID**: `4c432418-a9cb-4de9-bf4c-4f8e0689abdb`
+> 
+> </details>
+> 
+> <details>
+> <summary>📥 Commits</summary>
+> 
+> Reviewing files that changed from the base of the PR and between 181a0846f4aef5e810abe0184b5e114d6911c542 and d645da40db4e02872e0bd07e5e8a6932ee9e77c1.
+> 
+> </details>
+> 
+> <details>
+> <summary>📒 Files selected for processing (11)</summary>
+> 
+> * `internal/restapi/arrival_and_departure_for_stop_handler.go`
+> * `internal/restapi/arrivals_and_departures_for_stop_handler.go`
+> * `internal/restapi/reference_utils.go`
+> * `internal/restapi/situation_references_test.go`
+> * `internal/restapi/trip_details_handler.go`
+> * `internal/restapi/trip_for_vehicle_handler.go`
+> * `internal/restapi/trips_for_location_handler.go`
+> * `internal/restapi/trips_for_location_handler_test.go`
+> * `internal/restapi/trips_for_route_handler.go`
+> * `internal/restapi/trips_for_route_handler_test.go`
+> * `internal/restapi/trips_helper.go`
+> 
+> </details>
+> 
+> </details>
+
+<!-- end of auto-generated comment: rate limited by coderabbit.ai -->
+
+<!-- walkthrough_start -->
+
+<details>
+<summary>📝 Walkthrough</summary>
+
+## Walkthrough
+
+The REST API now collects situation references with emitted situation IDs across trip, stop, location, and route responses. Shared logic filters, qualifies, deduplicates, and converts alerts. Tests verify that emitted IDs resolve to `references.situations`.
+
+### Changes
+
+**Situation reference resolution**
+
+|Layer / File(s)|Summary|
+|---|---|
+|**Situation collection foundation** <br> `internal/restapi/reference_utils.go`, `internal/restapi/trips_helper.go`|Alert references are filtered, agency-qualified, deduplicated, converted to situations, and exposed through `TripSituations`.|
+|**Trip and stop response wiring** <br> `internal/restapi/trip_details_handler.go`, `internal/restapi/trip_for_vehicle_handler.go`, `internal/restapi/arrival_and_departure_for_stop_handler.go`, `internal/restapi/arrivals_and_departures_for_stop_handler.go`|Trip and stop responses use shared situation collection and include the returned references.|
+|**Location and route reference assembly** <br> `internal/restapi/trips_for_location_handler.go`, `internal/restapi/trips_for_route_handler.go`|Trip construction collects situations and includes them in generated reference models.|
+|**Reference consistency validation** <br> `internal/restapi/situation_references_test.go`, `internal/restapi/trips_for_location_handler_test.go`, `internal/restapi/trips_for_route_handler_test.go`|Tests seed alerts and verify that emitted situation IDs resolve to `references.situations` entries.|
+
+**Estimated code review effort:** 4 (Complex) | ~45 minutes
+
+### Sequence Diagram(s)
+
+```mermaid
+sequenceDiagram
+  participant Client
+  participant RESTAPI
+  participant TripSituations
+  participant References
+  Client->>RESTAPI: request trip or stop data
+  RESTAPI->>TripSituations: collect situation IDs and references
+  TripSituations-->>RESTAPI: return resolved situations
+  RESTAPI->>References: include situation references
+  RESTAPI-->>Client: return entries and references.situations
+```
+
+**Possibly related PRs**
+
+- [OneBusAway/maglev#1288](https://github.com/OneBusAway/maglev/pull/1288): Both changes modify trip-reference construction in `trips_for_route_handler.go`.
+- [OneBusAway/maglev#1317](https://github.com/OneBusAway/maglev/pull/1317): Both changes modify location trip construction and situation-related helpers.
+- [OneBusAway/maglev#1184](https://github.com/OneBusAway/maglev/pull/1184): Both changes add situation-reference coverage in `trips_for_location_handler_test.go`.
+
+**Suggested reviewers:** `burma-shave`, `ahmedhossamdev`, `3rabiii`
+
+</details>
+
+<!-- walkthrough_end -->
+<!-- pre_merge_checks_walkthrough_start -->
+
+<details>
+<summary>🚥 Pre-merge checks | ✅ 4 | ❌ 1</summary>
+
+### ❌ Failed checks (1 warning)
+
+|     Check name     | Status     | Explanation                                                                           | Resolution                                                                         |
+| :----------------: | :--------- | :------------------------------------------------------------------------------------ | :--------------------------------------------------------------------------------- |
+| Docstring Coverage | ⚠️ Warning | Docstring coverage is 50.00% which is insufficient. The required threshold is 80.00%. | Write docstrings for the functions missing them to satisfy the coverage threshold. |
+
+<details>
+<summary>✅ Passed checks (4 passed)</summary>
+
+|         Check name         | Status   | Explanation                                                                                                                                                     |
+| :------------------------: | :------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|     Linked Issues check    | ✅ Passed | The changes populate trips-for-location situation references and verify that emitted situation IDs resolve to references.situations as required by issue `#1307`. |
+| Out of Scope Changes check | ✅ Passed | The endpoint updates, shared helpers, deduplication, prefix handling, and tests directly support consistent situation-reference resolution.                     |
+|      Description Check     | ✅ Passed | Check skipped - CodeRabbit’s high-level summary is enabled.                                                                                                     |
+|         Title check        | ✅ Passed | The title clearly summarizes the primary change: ensuring situation references resolve across all affected endpoints.                                           |
+
+</details>
+
+</details>
+
+<!-- pre_merge_checks_walkthrough_end -->
+<!-- tips_start -->
+
+---
+
+Thanks for using [CodeRabbit](https://coderabbit.ai?utm_source=oss&utm_medium=github&utm_campaign=OneBusAway/maglev&utm_content=1313)! It's free for OSS, and your support helps us grow. If you like it, consider giving us a shout-out.
+
+<details>
+<summary>❤️ Share</summary>
+
+- [X](https://twitter.com/intent/tweet?text=I%20just%20used%20%40coderabbitai%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20the%20proprietary%20code.%20Check%20it%20out%3A&url=https%3A//coderabbit.ai)
+- [Mastodon](https://mastodon.social/share?text=I%20just%20used%20%40coderabbitai%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20the%20proprietary%20code.%20Check%20it%20out%3A%20https%3A%2F%2Fcoderabbit.ai)
+- [Reddit](https://www.reddit.com/submit?title=Great%20tool%20for%20code%20review%20-%20CodeRabbit&text=I%20just%20used%20CodeRabbit%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20proprietary%20code.%20Check%20it%20out%3A%20https%3A//coderabbit.ai)
+- [LinkedIn](https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fcoderabbit.ai&mini=true&title=Great%20tool%20for%20code%20review%20-%20CodeRabbit&summary=I%20just%20used%20CodeRabbit%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20proprietary%20code)
+
+</details>
+
+
+<sub>Comment `@coderabbitai help` to get the list of available commands.</sub>
+
+<!-- tips_end -->",,,1313-001,false
+1313,5221216181,issue,coderabbitai[bot],bot,false,false,false,false,"<!-- This is an auto-generated reply by CodeRabbit -->
+<!-- CodeRabbit review command invocation: dd4af29c-68e3-4432-be39-a2faa955251c -->
+<details>
+<summary>⚠️ Action not completed</summary>
+
+Review rate limited.
+
+---
+
+Your included review limit is currently reached under our [Fair Usage Limits Policy](https://docs.coderabbit.ai/management/plans#fair-usage-limits-policy). This review may still proceed through usage-based billing if eligible. Your next included review will be available in 34 minutes.
+
+</details>",,,1313-003,false
+1313,5297389248,issue,sonarqubecloud[bot],bot,false,false,false,false,"## [![Quality Gate Passed](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/checks/QualityGateBadge/qg-passed-20px.png 'Quality Gate Passed')](https://sonarcloud.io/dashboard?id=OneBusAway_maglev&pullRequest=1313) **Quality Gate passed**  
+Issues  
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0 New issues](https://sonarcloud.io/project/issues?id=OneBusAway_maglev&pullRequest=1313&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true)  
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/accepted-16px.png '') [0 Accepted issues](https://sonarcloud.io/project/issues?id=OneBusAway_maglev&pullRequest=1313&issueStatuses=ACCEPTED)
+
+Measures  
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0 Security Hotspots](https://sonarcloud.io/project/security_hotspots?id=OneBusAway_maglev&pullRequest=1313&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true)  
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0.0% Coverage on New Code](https://sonarcloud.io/component_measures?id=OneBusAway_maglev&pullRequest=1313&metric=new_coverage&view=list)  
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0.0% Duplication on New Code](https://sonarcloud.io/component_measures?id=OneBusAway_maglev&pullRequest=1313&metric=new_duplicated_lines_density&view=list)  
+  
+<!-- sqra-placement-anchor -->
+[See analysis details on SonarQube Cloud](https://sonarcloud.io/dashboard?id=OneBusAway_maglev&pullRequest=1313)
+
+",,,1313-008,false
+1313,3738555493,inline,coderabbitai[bot],bot,false,false,false,false,"_🗄️ Data Integrity & Integration_ | _🔵 Trivial_ | _⚡ Quick win_
+
+**Guard the index-parallel assumption between `refs` and `situations`.**
+
+`situationReferences` assumes `BuildSituationReferences` returns exactly one situation per input alert, in input order. That holds today, but the coupling is implicit. If `BuildSituationReferences` ever skips an alert, this code panics or stamps the wrong ID on a situation, which breaks the exact ID-resolution contract this PR adds.
+
+Add a length check so the failure mode is visible instead of silent.
+
+
+
+
+
+<details>
+<summary>🛡️ Proposed guard</summary>
+
+```diff
+ 	situations := api.BuildSituationReferences(alerts)
++	if len(situations) != len(refs) {
++		// BuildSituationReferences must stay one-for-one with its input, or
++		// entry situationIds stop resolving to references.situations.
++		slog.Error(""situation reference count mismatch"",
++			slog.Int(""refs"", len(refs)),
++			slog.Int(""situations"", len(situations)))
++		return situations
++	}
+ 	for i := range situations {
+ 		situations[i].ID = refs[i].ID
+ 	}
+```
+</details>
+
+<!-- suggestion_start -->
+
+<details>
+<summary>📝 Committable suggestion</summary>
+
+> ‼️ **IMPORTANT**
+> Carefully review the code before committing. Ensure that it accurately replaces the highlighted code, contains no missing lines, and has no issues with indentation. Thoroughly test & benchmark the code to ensure it meets the requirements.
+
+```suggestion
+func (api *RestAPI) situationReferences(refs []situationRef) []models.Situation {
+	if len(refs) == 0 {
+		return []models.Situation{}
+	}
+
+	alerts := make([]gtfs.Alert, 0, len(refs))
+	for _, ref := range refs {
+		alerts = append(alerts, ref.Alert)
+	}
+
+	situations := api.BuildSituationReferences(alerts)
+	if len(situations) != len(refs) {
+		// BuildSituationReferences must stay one-for-one with its input, or
+		// entry situationIds stop resolving to references.situations.
+		slog.Error(""situation reference count mismatch"",
+			slog.Int(""refs"", len(refs)),
+			slog.Int(""situations"", len(situations)))
+		return situations
+	}
+	for i := range situations {
+		situations[i].ID = refs[i].ID
+	}
+	return situations
+}
+```
+
+</details>
+
+<!-- suggestion_end -->
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against current code. Fix only still-valid issues, skip the
+rest with a brief reason, keep changes minimal, and validate.
+
+In `@internal/restapi/reference_utils.go` around lines 515 - 530, Update
+situationReferences to validate that BuildSituationReferences returns the same
+number of situations as refs before the index-based ID assignment; if lengths
+differ, fail visibly rather than pairing or indexing mismatched entries.
+Preserve the existing ordered ID assignment when the lengths match.
+```
+
+</details>
+
+<!-- fingerprinting:phantom:medusa:komodo -->
+
+<!-- cr-indicator-types:nitpick -->
+
+<!-- cr-comment:v1:fb175066e88a42ecc99c37be -->
+
+<!-- This is an auto-generated comment by CodeRabbit -->
+
+✅ Addressed in commits 0af3b41 to f253da5",internal/restapi/reference_utils.go,,1313-009,false
+1313,3738555508,inline,coderabbitai[bot],bot,false,false,false,false,"_📐 Maintainability & Code Quality_ | _🟡 Minor_ | _⚡ Quick win_
+
+**The test passes when no situation ID is emitted.**
+
+If the seeded alert never matches, `emitted` is empty, the loop body never runs, and every subtest passes. The test then covers nothing, and the regression it guards can return unnoticed.
+
+The two sibling tests added in this PR guard against this. See `trips_for_location_handler_test.go` line 656 and `trips_for_route_handler_test.go` line 1157, which both assert `sawSituationID`.
+
+Add the same guard here.
+
+
+
+
+
+<details>
+<summary>💚 Proposed fix</summary>
+
+```diff
+ 			for _, id := range emitted {
+ 				assert.True(t, referenced[id],
+ 					""situationId %q must resolve to an entry in references.situations"", id)
+ 			}
++			require.NotEmpty(t, emitted,
++				""expected the seeded alert to surface as a situationId"")
+```
+</details>
+
+<!-- suggestion_start -->
+
+<details>
+<summary>📝 Committable suggestion</summary>
+
+> ‼️ **IMPORTANT**
+> Carefully review the code before committing. Ensure that it accurately replaces the highlighted code, contains no missing lines, and has no issues with indentation. Thoroughly test & benchmark the code to ensure it meets the requirements.
+
+```suggestion
+			for _, id := range emitted {
+				assert.True(t, referenced[id],
+					""situationId %q must resolve to an entry in references.situations"", id)
+			}
+			require.NotEmpty(t, emitted,
+				""expected the seeded alert to surface as a situationId"")
+```
+
+</details>
+
+<!-- suggestion_end -->
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against current code. Fix only still-valid issues, skip the
+rest with a brief reason, keep changes minimal, and validate.
+
+In `@internal/restapi/situation_references_test.go` around lines 106 - 109, Add a
+sawSituationID boolean to the situation reference test, set it when iterating
+emitted IDs in the existing assertion loop, and assert it after the loop so the
+test fails when no situation ID is emitted. Follow the sibling test pattern in
+trips_for_location_handler_test.go and trips_for_route_handler_test.go.
+```
+
+</details>
+
+<!-- fingerprinting:phantom:medusa:komodo -->
+
+<!-- cr-indicator-types:potential_issue -->
+
+<!-- cr-comment:v1:e93d2aca5a673e5a5dbd2c5e -->
+
+<!-- This is an auto-generated comment by CodeRabbit -->
+
+✅ Addressed in commits 0af3b41 to f253da5",internal/restapi/situation_references_test.go,,1313-010,false
+1313,3738555520,inline,coderabbitai[bot],bot,false,false,false,false,"_📐 Maintainability & Code Quality_ | _🔵 Trivial_ | _⚡ Quick win_
+
+<details>
+<summary>🧩 Analysis chain</summary>
+
+🏁 Script executed:
+
+```shell
+#!/bin/bash
+# Description: Inspect createTestApiWithRealTimeData to see if it blocks until real-time data is loaded.
+set -euo pipefail
+
+fd -e go -t f . internal/restapi --exec rg -n -C 25 'func createTestApiWithRealTimeData' {} \;
+
+# Find other call sites and whether they sleep afterwards.
+rg -n -A 4 'createTestApiWithRealTimeData\(' --type=go
+```
+
+Repository: OneBusAway/maglev
+
+Length of output: 2817
+
+---
+
+🏁 Script executed:
+
+```shell
+#!/bin/bash
+set -euo pipefail
+
+# Locate and inspect the helper and the two call sites with enough surrounding context.
+python3 - <<'PY'
+from pathlib import Path
+import re
+for p in Path(""internal/restapi"").glob(""*_test.go""):
+    text = p.read_text()
+    if ""createTestApiWithRealTimeData"" in text or ""time.Sleep(500 * time.Millisecond)"" in text:
+        print(f""\n--- {p} ---"")
+        lines = text.splitlines()
+        for i, line in enumerate(lines, start=1):
+            if ""func createTestApiWithRealTimeData"" in line or (""TestTripsForRouteHandler_SituationReferences"" in line or ""time.Sleep(500 * time.Millisecond)"" in line or ""createTestApiWithRealTimeData"" in line):
+                start=max(1, i-35); end=min(len(lines), i+80)
+                for n in range(start, end+1):
+                    print(f""{n:5d} {lines[n-1]}"")
+                print()
+PY
+```
+
+Repository: OneBusAway/maglev
+
+Length of output: 50374
+
+---
+
+
+
+</details>
+
+**Replace the fixed delay with a deterministic wait.**
+
+The `500ms` sleep adds a fixed pause after `createTestApiWithRealTimeData`, but the wait target is not documented. Add a condition-based wait with a comment explaining the condition, or remove the sleep if the helper already synchronizes real-time data before returning. Keep existing test coverage for any added wait to avoid untested load-delay behavior.
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against current code. Fix only still-valid issues, skip the
+rest with a brief reason, keep changes minimal, and validate.
+
+In `@internal/restapi/trips_for_location_handler_test.go` at line 629, Replace the
+fixed time.Sleep after createTestApiWithRealTimeData with a deterministic
+condition-based wait for the required real-time data state, documenting the
+condition and preserving coverage for the load-delay behavior; if
+createTestApiWithRealTimeData already guarantees synchronization, remove the
+sleep instead.
+```
+
+</details>
+
+<!-- fingerprinting:phantom:medusa:komodo -->
+
+<!-- cr-indicator-types:nitpick -->
+
+<!-- cr-comment:v1:d493e9b768d365b84fec6cd1 -->
+
+<!-- This is an auto-generated comment by CodeRabbit -->
+
+✅ Addressed in commits 0af3b41 to f253da5",internal/restapi/trips_for_location_handler_test.go,,1313-011,false
+1313,3738555524,inline,coderabbitai[bot],bot,false,false,false,false,"_🚀 Performance & Scalability_ | _🔵 Trivial_ | _⚡ Quick win_
+
+**Reuse the already-resolved route and agency instead of re-querying per trip.**
+
+`situationRefsForTrip` runs `GetTrip` and `GetRoute` for every entry. This handler already resolved both: `fetchedTrips` holds the trip rows and `tripAgencyMap` / `routeAgencyMap` hold the agency (lines 295-321). The result is two extra database round-trips per entry on a hot list endpoint.
+
+`trips_for_location_handler.go` (lines 413-417) avoids this exact cost by calling `GetAlertsByIDs` with the resolved IDs and passing the alerts to `situations.add`. Apply the same approach here for consistency and fewer queries.
+
+Note that `entryTripID` may differ from `fetchedTrip.ID` for interlined blocks, so the route ID must come from the resolved entry trip rather than from `fetchedTrip` unconditionally.
+
+
+
+
+
+
+Also applies to: 469-469
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against current code. Fix only still-valid issues, skip the
+rest with a brief reason, keep changes minimal, and validate.
+
+In `@internal/restapi/trips_for_route_handler.go` at line 405, Replace the
+per-trip situationRefsForTrip calls at both affected sites with the existing
+bulk alert-loading flow used by trips_for_location_handler.go. Resolve the entry
+trip from fetchedTrips using entryTripID, derive its route and agency through
+tripAgencyMap/routeAgencyMap, then pass the resolved IDs to GetAlertsByIDs and
+provide the results to situations.add. Preserve interlined-block handling by
+sourcing the route from the resolved entry trip rather than fetchedTrip
+unconditionally.
+```
+
+</details>
+
+<!-- fingerprinting:phantom:medusa:komodo -->
+
+<!-- cr-indicator-types:nitpick -->
+
+<!-- cr-comment:v1:fd1472e6133199e4d894a2cf -->
+
+<!-- This is an auto-generated comment by CodeRabbit -->
+
+✅ Addressed in commits 0af3b41 to f253da5",internal/restapi/trips_for_route_handler.go,,1313-012,false
+1313,3738555528,inline,coderabbitai[bot],bot,false,false,false,false,"_📐 Maintainability & Code Quality_ | _🔵 Trivial_ | _⚡ Quick win_
+
+**Log the failed stop-route lookup.**
+
+`routeIDsForStops` discards the query error and returns an empty map. Every stop reference then reports no routes, and there is no signal that a query failed. The sibling helpers `fillMissingTrips` and `fillRoutesAndAgencies` both use `logging.LogError` in the same situation.
+
+
+
+
+
+<details>
+<summary>♻️ Proposed change</summary>
+
+```diff
+ 	rows, err := api.GtfsManager.GtfsDB.Queries.GetRouteIDsForStops(ctx, stopIDs)
+ 	if err != nil {
++		logging.LogError(api.Logger, ""failed to fetch route IDs for stop references"", err)
+ 		return routeIDsByStop
+ 	}
+```
+</details>
+
+<!-- suggestion_start -->
+
+<details>
+<summary>📝 Committable suggestion</summary>
+
+> ‼️ **IMPORTANT**
+> Carefully review the code before committing. Ensure that it accurately replaces the highlighted code, contains no missing lines, and has no issues with indentation. Thoroughly test & benchmark the code to ensure it meets the requirements.
+
+```suggestion
+	rows, err := api.GtfsManager.GtfsDB.Queries.GetRouteIDsForStops(ctx, stopIDs)
+	if err != nil {
+		logging.LogError(api.Logger, ""failed to fetch route IDs for stop references"", err)
+		return routeIDsByStop
+	}
+```
+
+</details>
+
+<!-- suggestion_end -->
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against current code. Fix only still-valid issues, skip the
+rest with a brief reason, keep changes minimal, and validate.
+
+In `@internal/restapi/trips_for_route_handler.go` around lines 896 - 899, Update
+the GetRouteIDsForStops error path in routeIDsForStops to log the query failure
+with logging.LogError before returning routeIDsByStop, matching the
+error-handling pattern used by fillMissingTrips and fillRoutesAndAgencies.
+```
+
+</details>
+
+<!-- fingerprinting:phantom:medusa:komodo -->
+
+<!-- cr-indicator-types:nitpick -->
+
+<!-- cr-comment:v1:38daefe2e6b66c2c4b4d8af3 -->
+
+<!-- This is an auto-generated comment by CodeRabbit -->
+
+✅ Addressed in commits 0af3b41 to f253da5",internal/restapi/trips_for_route_handler.go,,1313-013,false
+1313,3738555538,inline,coderabbitai[bot],bot,false,false,false,false,"_🗄️ Data Integrity & Integration_ | _🟠 Major_ | _⚡ Quick win_
+
+**`tripReferenceList` does not skip trips whose route was never resolved.**
+
+The doc comment states that a trip whose route was never resolved is skipped. The code does not do that. `collectPreFetchedTrips` (line 762) pre-seeds `s.routes[trip.RouteID] = models.Route{}`, so the map key always exists. The `route, ok := s.routes[trip.RouteID]` lookup therefore returns `ok == true` even when the route was never loaded.
+
+When `fillRoutesAndAgencies` fails or omits a route ID, `route.AgencyID` is `""""`. `utils.FormCombinedID` returns `""""` when the agency ID is empty. The response then contains a trip reference whose `id`, `routeId`, and `serviceId` are all empty strings. Entry `tripId` values cannot resolve against such a reference.
+
+Test the resolved value, not the key presence.
+
+
+
+
+
+<details>
+<summary>🐛 Proposed fix</summary>
+
+```diff
+ 	for _, trip := range s.trips {
+ 		route, ok := s.routes[trip.RouteID]
+-		if !ok {
++		if !ok || route.AgencyID == """" {
+ 			continue
+ 		}
+```
+</details>
+
+<!-- suggestion_start -->
+
+<details>
+<summary>📝 Committable suggestion</summary>
+
+> ‼️ **IMPORTANT**
+> Carefully review the code before committing. Ensure that it accurately replaces the highlighted code, contains no missing lines, and has no issues with indentation. Thoroughly test & benchmark the code to ensure it meets the requirements.
+
+```suggestion
+// tripReferenceList emits the collected trips in combined-ID form. A trip whose
+// route was never resolved is skipped, since its agency is unknown.
+func (s *tripReferenceSets) tripReferenceList(includeTrip bool) []models.Trip {
+	tripsRefList := make([]models.Trip, 0, len(s.trips))
+	if !includeTrip {
+		return tripsRefList
+	}
+
+	for _, trip := range s.trips {
+		route, ok := s.routes[trip.RouteID]
+		if !ok || route.AgencyID == """" {
+			continue
+		}
+		tripsRefList = append(tripsRefList, models.Trip{
+			ID:            utils.FormCombinedID(route.AgencyID, trip.ID),
+			RouteID:       utils.FormCombinedID(route.AgencyID, trip.RouteID),
+			ServiceID:     utils.FormCombinedID(route.AgencyID, trip.ServiceID),
+			TripHeadsign:  trip.TripHeadsign,
+			TripShortName: trip.TripShortName,
+			DirectionID:   trip.DirectionID,
+			BlockID:       utils.FormCombinedID(route.AgencyID, trip.BlockID),
+			ShapeID:       utils.FormCombinedID(route.AgencyID, trip.ShapeID),
+			PeakOffPeak:   0,
+			TimeZone:      """",
+		})
+	}
+	return tripsRefList
+}
+```
+
+</details>
+
+<!-- suggestion_end -->
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against current code. Fix only still-valid issues, skip the
+rest with a brief reason, keep changes minimal, and validate.
+
+In `@internal/restapi/trips_for_route_handler.go` around lines 908 - 935, Update
+tripReferenceList to skip trips whose resolved route has an empty AgencyID,
+rather than relying on the map lookup’s ok value; preserve the existing skip for
+missing keys and only append references when the route resolution provides a
+non-empty agency identifier.
+```
+
+</details>
+
+<!-- fingerprinting:phantom:medusa:komodo -->
+
+<!-- cr-indicator-types:potential_issue -->
+
+<!-- cr-comment:v1:0473514985c40c074b2a90dd -->
+
+<!-- This is an auto-generated comment by CodeRabbit -->
+
+✅ Addressed in commits 0af3b41 to f253da5",internal/restapi/trips_for_route_handler.go,,1313-014,false
+1313,3748804791,inline,coderabbitai[bot],bot,false,false,false,false,"_🎯 Functional Correctness_ | _🟡 Minor_ | _⚡ Quick win_
+
+**Require the seeded alert in both resolution tests.**
+
+Both tests prove only that some `situationId` was emitted. They do not prove that the alert injected by the test was emitted.
+
+- `internal/restapi/situation_references_test.go#L120-L126`: require `25_situation-resolution-alert` in `emitted`.
+- `internal/restapi/trips_for_location_handler_test.go#L653-L660`: require `25_test-alert-trips-for-location` in the collected entry situation IDs.
+
+<details>
+<summary>📍 Affects 2 files</summary>
+
+- `internal/restapi/situation_references_test.go#L120-L126` (this comment)
+- `internal/restapi/trips_for_location_handler_test.go#L653-L660`
+
+</details>
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against current code. Fix only still-valid issues, skip the
+rest with a brief reason, keep changes minimal, and validate.
+
+In `@internal/restapi/situation_references_test.go` around lines 120 - 126,
+Strengthen both resolution tests to assert the seeded alert’s specific ID, not
+merely that any situation ID was emitted. In
+internal/restapi/situation_references_test.go:120-126, require
+25_situation-resolution-alert in emitted; in
+internal/restapi/trips_for_location_handler_test.go:653-660, require
+25_test-alert-trips-for-location among the collected entry situation IDs.
+```
+
+</details>
+
+<!-- consolidated_sites_start -->
+<!--
+<consolidated_sites>
+<site>
+<role>anchor</role>
+<file>internal/restapi/situation_references_test.go</file>
+<line_range>120-126</line_range>
+</site>
+<site>
+<role>sibling</role>
+<file>internal/restapi/trips_for_location_handler_test.go</file>
+<line_range>653-660</line_range>
+</site>
+</consolidated_sites>
+-->
+<!-- consolidated_sites_end -->
+
+<!-- fingerprinting:phantom:poseidon:caracal -->
+
+<!-- cr-indicator-types:potential_issue -->
+
+<!-- cr-comment:v1:d9da599d0660fb3160f8eedb -->
+
+<!-- This is an auto-generated comment by CodeRabbit -->
+
+✅ Addressed in commits 5d7e7e5 to 14cdf96",internal/restapi/situation_references_test.go,,1313-018,false
+1313,3748804794,inline,coderabbitai[bot],bot,false,false,false,false,"_🗄️ Data Integrity & Integration_ | _🟡 Minor_ | _⚡ Quick win_
+
+**Exercise deduplication across both lookup paths.**
+
+The loop calls `situationRefsFromAlerts` separately with one alert and one caller agency. It verifies ID selection, but it never combines the route and stop results. A collector can still append two references for the same alert and this test will pass. Add a collector- or endpoint-level assertion that reaches the alert through both agencies and requires one `references.situations` entry with the same ID.
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against current code. Fix only still-valid issues, skip the
+rest with a brief reason, keep changes minimal, and validate.
+
+In `@internal/restapi/situation_references_test.go` around lines 161 - 205, The
+test only validates each agency lookup independently and does not verify
+deduplication when both results are combined. Extend
+TestSituationRefsFromAlertsAgencyScope or add an endpoint-level assertion that
+collects references from both caller agencies, then require exactly one
+references.situations entry whose ID is the alert’s agency-qualified ID.
+```
+
+</details>
+
+<!-- fingerprinting:phantom:poseidon:caracal -->
+
+<!-- cr-indicator-types:potential_issue -->
+
+<!-- cr-comment:v1:9f7e15097400292367dd0b44 -->
+
+<!-- This is an auto-generated comment by CodeRabbit -->
+
+✅ Addressed in commits 5d7e7e5 to 14cdf96",internal/restapi/situation_references_test.go,,1313-019,false
+1313,3748804797,inline,coderabbitai[bot],bot,false,false,false,false,"_🚀 Performance & Scalability_ | _🔵 Trivial_ | _⚡ Quick win_
+
+**Keep the prefetch index synchronized for selected interlined trips.**
+
+When `resolveInterlinedEntryTripID` selects a trip outside the initial `fetchedTrips` slice, line 371 appends it only to `fetchedTrips`. `tripsByID` then misses at line 413, so `tripSituationRefs` calls `situationRefsForTrip` and restores the per-entry database lookups that this change is intended to remove.
+
+Add `resolution.SelectedTrip` to `tripsByID`. Add its route agency to `routeAgencyMap` when needed.
+
+<details>
+<summary>Proposed fix</summary>
+
+```diff
+ fetchedTrips = append(fetchedTrips, resolution.SelectedTrip)
++tripsByID[resolution.SelectedTrip.ID] = resolution.SelectedTrip
++routeAgencyMap[resolution.SelectedTrip.RouteID] = entryAgencyID
+```
+</details>
+
+
+
+
+
+
+
+
+Also applies to: 413-413, 739-755
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against current code. Fix only still-valid issues, skip the
+rest with a brief reason, keep changes minimal, and validate.
+
+In `@internal/restapi/trips_for_route_handler.go` around lines 337 - 340, Update
+the selected-trip handling around resolveInterlinedEntryTripID so every
+resolution.SelectedTrip appended to fetchedTrips is also indexed in tripsByID.
+Ensure its route agency is added to routeAgencyMap when absent, preserving the
+prefetched lookup path used by tripSituationRefs and avoiding fallback database
+queries.
+```
+
+</details>
+
+<!-- fingerprinting:phantom:medusa:tapir -->
+
+<!-- cr-indicator-types:nitpick -->
+
+<!-- cr-comment:v1:b87aeedddb23da103f8d7a90 -->
+
+<!-- This is an auto-generated comment by CodeRabbit -->
+
+✅ Addressed in commits 5d7e7e5 to 14cdf96",internal/restapi/trips_for_route_handler.go,,1313-020,false
+1313,4886317099,review_body,coderabbitai[bot],bot,false,false,false,false,"**Actionable comments posted: 6**
+
+<details>
+<summary>🤖 Prompt for all review comments with AI agents</summary>
+
+```
+Verify each finding against current code. Fix only still-valid issues, skip the
+rest with a brief reason, keep changes minimal, and validate.
+
+Inline comments:
+In `@internal/restapi/reference_utils.go`:
+- Around line 515-530: Update situationReferences to validate that
+BuildSituationReferences returns the same number of situations as refs before
+the index-based ID assignment; if lengths differ, fail visibly rather than
+pairing or indexing mismatched entries. Preserve the existing ordered ID
+assignment when the lengths match.
+
+In `@internal/restapi/situation_references_test.go`:
+- Around line 106-109: Add a sawSituationID boolean to the situation reference
+test, set it when iterating emitted IDs in the existing assertion loop, and
+assert it after the loop so the test fails when no situation ID is emitted.
+Follow the sibling test pattern in trips_for_location_handler_test.go and
+trips_for_route_handler_test.go.
+
+In `@internal/restapi/trips_for_location_handler_test.go`:
+- Line 629: Replace the fixed time.Sleep after createTestApiWithRealTimeData
+with a deterministic condition-based wait for the required real-time data state,
+documenting the condition and preserving coverage for the load-delay behavior;
+if createTestApiWithRealTimeData already guarantees synchronization, remove the
+sleep instead.
+
+In `@internal/restapi/trips_for_route_handler.go`:
+- Line 405: Replace the per-trip situationRefsForTrip calls at both affected
+sites with the existing bulk alert-loading flow used by
+trips_for_location_handler.go. Resolve the entry trip from fetchedTrips using
+entryTripID, derive its route and agency through tripAgencyMap/routeAgencyMap,
+then pass the resolved IDs to GetAlertsByIDs and provide the results to
+situations.add. Preserve interlined-block handling by sourcing the route from
+the resolved entry trip rather than fetchedTrip unconditionally.
+- Around line 896-899: Update the GetRouteIDsForStops error path in
+routeIDsForStops to log the query failure with logging.LogError before returning
+routeIDsByStop, matching the error-handling pattern used by fillMissingTrips and
+fillRoutesAndAgencies.
+- Around line 908-935: Update tripReferenceList to skip trips whose resolved
+route has an empty AgencyID, rather than relying on the map lookup’s ok value;
+preserve the existing skip for missing keys and only append references when the
+route resolution provides a non-empty agency identifier.
+```
+
+</details>
+
+<details>
+<summary>🪄 Autofix</summary>
+
+Fix all unresolved CodeRabbit comments on this PR:
+
+- [ ] <!-- {""checkboxId"": ""4b0d0e0a-96d7-4f10-b296-3a18ea78f0b9""} --> Push a commit to this branch (recommended)
+- [ ] <!-- {""checkboxId"": ""ff5b1114-7d8c-49e6-8ac1-43f82af23a33""} --> Create a new PR with the fixes
+
+</details>
+
+---
+
+<details>
+<summary>ℹ️ Review info</summary>
+
+<details>
+<summary>⚙️ Run configuration</summary>
+
+**Configuration used**: Repository UI
+
+**Review profile**: ASSERTIVE
+
+**Plan**: Pro Plus
+
+**Run ID**: `a692a796-9d77-4fb1-a464-7b8d64238790`
+
+</details>
+
+<details>
+<summary>📥 Commits</summary>
+
+Reviewing files that changed from the base of the PR and between f84051ae52d4e4a87046f9b2e3ae2ab9a46841c8 and 64590c8d69e6473143b5696634452f0cb135d247.
+
+</details>
+
+<details>
+<summary>📒 Files selected for processing (11)</summary>
+
+* `internal/restapi/arrival_and_departure_for_stop_handler.go`
+* `internal/restapi/arrivals_and_departures_for_stop_handler.go`
+* `internal/restapi/reference_utils.go`
+* `internal/restapi/situation_references_test.go`
+* `internal/restapi/trip_details_handler.go`
+* `internal/restapi/trip_for_vehicle_handler.go`
+* `internal/restapi/trips_for_location_handler.go`
+* `internal/restapi/trips_for_location_handler_test.go`
+* `internal/restapi/trips_for_route_handler.go`
+* `internal/restapi/trips_for_route_handler_test.go`
+* `internal/restapi/trips_helper.go`
+
+</details>
+
+</details>
+
+<!-- This is an auto-generated comment by CodeRabbit for review status -->",,,1313-036,false
+1313,4895984619,review_body,coderabbitai[bot],bot,false,false,false,false,"**Actionable comments posted: 3**
+
+> [!CAUTION]
+> Some comments are outside the diff and can’t be posted inline due to platform limitations.
+> 
+> 
+> 
+> <details>
+> <summary>⚠️ Outside diff range comments (1)</summary><blockquote>
+> 
+> <details>
+> <summary>internal/restapi/situation_references_test.go (1)</summary><blockquote>
+> 
+> `66-78`: _🩺 Stability & Availability_ | _🟡 Minor_ | _⚡ Quick win_
+> 
+> **Wait for the initial real-time feed before selecting the vehicle.**
+> 
+> `createTestApiWithRealTimeData` returns before the first feed poll. `anyRealTimeVehicleID(t, api)` runs immediately on Line 78 and can fail before the endpoint checks. Wait until real-time vehicles are available before `AddAlertForTest` and vehicle selection, as in `internal/restapi/trips_for_location_handler_test.go` Lines 629-633.
+> 
+> <details>
+> <summary>🤖 Prompt for AI Agents</summary>
+> 
+> ```
+> Verify each finding against current code. Fix only still-valid issues, skip the
+> rest with a brief reason, keep changes minimal, and validate.
+> 
+> In `@internal/restapi/situation_references_test.go` around lines 66 - 78, Wait for
+> the initial real-time feed to populate vehicles immediately after
+> createTestApiWithRealTimeData and before AddAlertForTest and
+> anyRealTimeVehicleID. Reuse the established wait pattern from
+> trips_for_location_handler_test.go so vehicle selection only occurs once
+> real-time data is available.
+> ```
+> 
+> </details>
+> 
+> <!-- cr-comment:v1:ab89a144a5014ea2313bf17f -->
+> 
+> </blockquote></details>
+> 
+> </blockquote></details>
+
+<details>
+<summary>🤖 Prompt for all review comments with AI agents</summary>
+
+```
+Verify each finding against current code. Fix only still-valid issues, skip the
+rest with a brief reason, keep changes minimal, and validate.
+
+Inline comments:
+In `@internal/restapi/situation_references_test.go`:
+- Around line 161-205: The test only validates each agency lookup independently
+and does not verify deduplication when both results are combined. Extend
+TestSituationRefsFromAlertsAgencyScope or add an endpoint-level assertion that
+collects references from both caller agencies, then require exactly one
+references.situations entry whose ID is the alert’s agency-qualified ID.
+- Around line 120-126: Strengthen both resolution tests to assert the seeded
+alert’s specific ID, not merely that any situation ID was emitted. In
+internal/restapi/situation_references_test.go:120-126, require
+25_situation-resolution-alert in emitted; in
+internal/restapi/trips_for_location_handler_test.go:653-660, require
+25_test-alert-trips-for-location among the collected entry situation IDs.
+
+In `@internal/restapi/trips_for_route_handler.go`:
+- Around line 337-340: Update the selected-trip handling around
+resolveInterlinedEntryTripID so every resolution.SelectedTrip appended to
+fetchedTrips is also indexed in tripsByID. Ensure its route agency is added to
+routeAgencyMap when absent, preserving the prefetched lookup path used by
+tripSituationRefs and avoiding fallback database queries.
+
+---
+
+Outside diff comments:
+In `@internal/restapi/situation_references_test.go`:
+- Around line 66-78: Wait for the initial real-time feed to populate vehicles
+immediately after createTestApiWithRealTimeData and before AddAlertForTest and
+anyRealTimeVehicleID. Reuse the established wait pattern from
+trips_for_location_handler_test.go so vehicle selection only occurs once
+real-time data is available.
+```
+
+</details>
+
+<details>
+<summary>🪄 Autofix</summary>
+
+Fix all unresolved CodeRabbit comments on this PR:
+
+- [ ] <!-- {""checkboxId"": ""4b0d0e0a-96d7-4f10-b296-3a18ea78f0b9""} --> Push a commit to this branch (recommended)
+- [ ] <!-- {""checkboxId"": ""ff5b1114-7d8c-49e6-8ac1-43f82af23a33""} --> Create a new PR with the fixes
+
+</details>
+
+---
+
+<details>
+<summary>ℹ️ Review info</summary>
+
+<details>
+<summary>⚙️ Run configuration</summary>
+
+**Configuration used**: Repository UI
+
+**Review profile**: ASSERTIVE
+
+**Plan**: Pro Plus
+
+**Run ID**: `4b0f5e79-504e-4645-acf2-8154daaa93e5`
+
+</details>
+
+<details>
+<summary>📥 Commits</summary>
+
+Reviewing files that changed from the base of the PR and between 64590c8d69e6473143b5696634452f0cb135d247 and 181a0846f4aef5e810abe0184b5e114d6911c542.
+
+</details>
+
+<details>
+<summary>📒 Files selected for processing (4)</summary>
+
+* `internal/restapi/reference_utils.go`
+* `internal/restapi/situation_references_test.go`
+* `internal/restapi/trips_for_location_handler_test.go`
+* `internal/restapi/trips_for_route_handler.go`
+
+</details>
+
+</details>
+
+<!-- This is an auto-generated comment by CodeRabbit for review status -->",,,1313-038,false

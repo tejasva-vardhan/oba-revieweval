@@ -1,0 +1,18 @@
+[
+  {
+    "filename": "internal/gtfs/gtfs_manager.go",
+    "status": "modified",
+    "additions": 21,
+    "deletions": 8,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/vehicles_for_agency_handler.go",
+    "status": "modified",
+    "additions": 8,
+    "deletions": 6,
+    "previous_filename": null,
+    "binary": false
+  }
+]

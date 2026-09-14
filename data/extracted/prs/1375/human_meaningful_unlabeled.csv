@@ -1,0 +1,4 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1375,5456003071,issue,ARCoder181105,human,false,false,true,false,"@priyanshu7739410 
+make sure u run `make test` and it passes...",,,1375-003,false
+1375,5463835518,issue,ARCoder181105,human,false,false,true,false,"LGTM. Verified against the [search-stop wiki spec](https://github.com/OneBusAway/maglev/wiki/search-stop) — the fix matches the documented success guarantee that all agencies owning referenced routes must appear in `references.agencies`. Regression test covers the cross-agency parent-station case from #1368. `go vet` clean, full `search-stop` test suite passes.",,,1375-007,false

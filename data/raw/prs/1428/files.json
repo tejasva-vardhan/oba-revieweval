@@ -1,0 +1,18 @@
+[
+  {
+    "filename": "internal/restapi/block_handler.go",
+    "status": "modified",
+    "additions": 2,
+    "deletions": 2,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/block_handler_test.go",
+    "status": "modified",
+    "additions": 25,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  }
+]

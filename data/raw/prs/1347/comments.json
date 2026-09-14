@@ -1,0 +1,140 @@
+{
+  "issue_comments": [
+    {
+      "id": 5301860523,
+      "source": "issue",
+      "login": "coderabbitai[bot]",
+      "user_type": "Bot",
+      "body": " \n \n\n[![Review Change Stack](https://storage.googleapis.com/coderabbit_public_assets/review-stack-in-coderabbit-ui.svg)](https://app.coderabbit.ai/change-stack/OneBusAway/maglev/pull/1347?utm_source=github_walkthrough&utm_medium=github&utm_campaign=change_stack)\n\n \n \n\nNo actionable comments were generated in the recent review. \ud83c\udf89\n\n \n \u2139\ufe0f Recent review info \n\n \n \u2699\ufe0f Run configuration \n\n**Configuration used**: Repository UI\n\n**Review profile**: ASSERTIVE\n\n**Plan**: Pro Plus\n\n**Run ID**: `3ea09825-d3b2-49cd-a0a0-61d53e14344c`\n\n \n\n \n \ud83d\udce5 Commits \n\nReviewing files that changed from the base of the PR and between d9d5baa563d76590cd34c77a67376b277a617b5d and a73efdfa9642c8d2655500d2b34890b519e61819.\n\n \n\n \n \ud83d\udcd2 Files selected for processing (1) \n\n* `internal/restapi/arrivals_and_departures_for_stop_handler_test.go`\n\n \n\n**Included review availability:** Your plan includes up to 1 review per rolling hour; 0 remain after this review.\n\n \n\n---\n\n\n\n \n \n\n \n \ud83d\udcdd Walkthrough \n\n## Walkthrough\n\nThe arrivals handler reuses situations resolved by `BuildTripStatus`. A new end-to-end test verifies route-level alert IDs on arrivals and in `references.situations`.\n\n### Changes\n\n**Arrival situation references**\n\n|Layer / File(s)|Summary|\n|---|---|\n|**Resolved situations and reference validation** `internal/restapi/arrivals_and_departures_for_stop_handler.go`, `internal/restapi/arrivals_and_departures_for_stop_handler_test.go`|The handler adds `BuildTripStatus` situations to the shared collector and derives arrival situation IDs from them. The test verifies route-alert references in the affected arrival and response references.|\n\n**Estimated code review effort:** 2 (Simple) | ~10 minutes\n\n \n**Merge Risk:** _\u26aa Minimal_ \u00b7 up to `a73ef`\n\nThis is a small localized change that reuses resolved situation references for arrivals and adds regression coverage; no actionable merge-blocking risk remains beyond normal checks and review.\n \n\n**Possibly related PRs**\n\n- [OneBusAway/maglev#1000](https://github.com/OneBusAway/maglev/pull/1000) \u2014 Changes `BuildTripStatus` and the arrivals handler\u2019s status flow used by this update.\n- [OneBusAway/maglev#1313](https://github.com/OneBusAway/maglev/pull/1313) \u2014 Introduces the trip situation and shared collector changes reused here.\n- [OneBusAway/maglev#1314](https://github.com/OneBusAway/maglev/pull/1314) \u2014 Refactors situation references in the arrivals/departures handler extended by this update.\n\n**Suggested reviewers:** `burma-shave`, `aaronbrethorst`\n\n \n\n \n \n\n \n \ud83d\udea5 Pre-merge checks | \u2705 4 | \u274c 1 \n\n### \u274c Failed checks (1 warning)\n\n| Check name | Status | Explanation | Resolution |\n| :----------------: | :--------- | :------------------------------------------------------------------------------------ | :--------------------------------------------------------------------------------- |\n| Docstring Coverage | \u26a0\ufe0f Warning | Docstring coverage is 33.33% which is insufficient. The required threshold is 80.00%. | Write docstrings for the functions missing them to satisfy the coverage threshold. |\n\n \n \u2705 Passed checks (4 passed) \n\n| Check name | Status | Explanation |\n| :------------------------: | :------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------- |\n| Description Check | \u2705 Passed | Check skipped - CodeRabbit\u2019s high-level summary is enabled. |\n| Title check | \u2705 Passed | The title clearly summarizes the primary change: reusing resolved situations for arrivals. |\n| Linked Issues check | \u2705 Passed | The implementation reuses BuildTripStatus situations, removes duplicate alert resolution, and adds the required route-alert reference test for issue `#1341`. |\n| Out of Scope Changes check | \u2705 Passed | All changes support issue `#1341` by updating arrival situation handling and adding focused regression coverage. |\n\n \n\n \n\n \n \n\n---\n\nThanks for using [CodeRabbit](https://coderabbit.ai?utm_source=oss&utm_medium=github&utm_campaign=OneBusAway/maglev&utm_content=1347)! It's free for OSS, and your support helps us grow. If you like it, consider giving us a shout-out.\n\n \n \u2764\ufe0f Share \n\n- [X](https://twitter.com/intent/tweet?text=I%20just%20used%20%40coderabbitai%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20the%20proprietary%20code.%20Check%20it%20out%3A&url=https%3A//coderabbit.ai)\n- [Mastodon](https://mastodon.social/share?text=I%20just%20used%20%40coderabbitai%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20the%20proprietary%20code.%20Check%20it%20out%3A%20https%3A%2F%2Fcoderabbit.ai)\n- [Reddit](https://www.reddit.com/submit?title=Great%20tool%20for%20code%20review%20-%20CodeRabbit&text=I%20just%20used%20CodeRabbit%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20proprietary%20code.%20Check%20it%20out%3A%20https%3A//coderabbit.ai)\n- [LinkedIn](https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fcoderabbit.ai&mini=true&title=Great%20tool%20for%20code%20review%20-%20CodeRabbit&summary=I%20just%20used%20CodeRabbit%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20proprietary%20code)\n\n \n\n\n Comment `@coderabbitai help` to get the list of available commands. \n\n ",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-15T10:40:59Z"
+    },
+    {
+      "id": 5314064685,
+      "source": "issue",
+      "login": "ARCoder181105",
+      "user_type": "User",
+      "body": "@soumajitgh can you rebase and squash the PR into single atomic commit , as the commit history still consist the anomaly of `\\n` we have to remove that..",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-17T09:10:50Z"
+    },
+    {
+      "id": 5314640444,
+      "source": "issue",
+      "login": "sonarqubecloud[bot]",
+      "user_type": "Bot",
+      "body": "## [![Quality Gate Passed](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/checks/QualityGateBadge/qg-passed-20px.png 'Quality Gate Passed')](https://sonarcloud.io/dashboard?id=OneBusAway_maglev&pullRequest=1347) **Quality Gate passed** \nIssues \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0 New issues](https://sonarcloud.io/project/issues?id=OneBusAway_maglev&pullRequest=1347&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true) \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/accepted-16px.png '') [0 Accepted issues](https://sonarcloud.io/project/issues?id=OneBusAway_maglev&pullRequest=1347&issueStatuses=ACCEPTED)\n\nMeasures \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0 Security Hotspots](https://sonarcloud.io/project/security_hotspots?id=OneBusAway_maglev&pullRequest=1347&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true) \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0.0% Coverage on New Code](https://sonarcloud.io/component_measures?id=OneBusAway_maglev&pullRequest=1347&metric=new_coverage&view=list) \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0.0% Duplication on New Code](https://sonarcloud.io/component_measures?id=OneBusAway_maglev&pullRequest=1347&metric=new_duplicated_lines_density&view=list) \n \n \n[See analysis details on SonarQube Cloud](https://sonarcloud.io/dashboard?id=OneBusAway_maglev&pullRequest=1347)\n\n",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-17T10:04:50Z"
+    },
+    {
+      "id": 5314657954,
+      "source": "issue",
+      "login": "soumajitgh",
+      "user_type": "User",
+      "body": "@ARCoder181105 done",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-17T10:06:38Z"
+    },
+    {
+      "id": 5339161176,
+      "source": "issue",
+      "login": "aaronbrethorst",
+      "user_type": "User",
+      "body": "### Code review\n\nNo issues found. Checked for bugs and CLAUDE.md compliance.\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.ai/code)\n",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-19T07:53:53Z"
+    }
+  ],
+  "inline_comments": [
+    {
+      "id": 3794252743,
+      "source": "inline",
+      "login": "ARCoder181105",
+      "user_type": "User",
+      "body": "This test passes on the pre-change code too \u2014 revert the one-line change and it still goes green, because `GetAlertsForTrip` resolved the same alert with the same agency and the same ID. Good coverage of the situationIds\u2194references invariant, but it doesn't pin what this PR changed.\n\nAsserting the IDs came from the status would:\n\n```suggestion\n\trequire.NotNil(t, affectedArrival.TripStatus)\n\tassert.Equal(t, affectedArrival.TripStatus.SituationIDs, affectedArrival.SituationIDs,\n\t\t\"arrival situationIds must be the ones BuildTripStatus resolved, not a second lookup\")\n\tassert.Contains(t, affectedArrival.SituationIDs, wantSituationID,\n```\n\nThat's exactly the property the commit message claims, and it breaks if someone reintroduces a separate lookup.",
+      "inline": true,
+      "path": "internal/restapi/arrivals_and_departures_for_stop_handler_test.go",
+      "line": 138,
+      "created_at": "2026-08-17T06:36:12Z"
+    },
+    {
+      "id": 3795007448,
+      "source": "inline",
+      "login": "soumajitgh",
+      "user_type": "User",
+      "body": "Addressed in a73efdf. The test now asserts that the arrival\u2019s `SituationIDs` exactly match `TripStatus.SituationIDs`, while retaining the expected alert-ID assertion. I also amended the commit message body to use real line breaks.",
+      "inline": true,
+      "path": "internal/restapi/arrivals_and_departures_for_stop_handler_test.go",
+      "line": 138,
+      "created_at": "2026-08-17T08:55:06Z"
+    }
+  ],
+  "review_bodies": [
+    {
+      "id": 4948889647,
+      "source": "review_body",
+      "login": "ARCoder181105",
+      "user_type": "User",
+      "body": "Traced both paths \u2014 the refactor is output-identical, and the perf win is real.\n\n`GetAlertsForTrip` and `situationRefsForTrip` both do `GetTrip` \u2192 `GetRoute` \u2192 `GetAlertsByIDs(tripID, routeID, agencyID)` and both end at `situationRefsFromAlerts(alerts, agencyID)`. Same alerts, same IDs \u2014 so this drops one duplicated `GetTrip`+`GetRoute`+alert-index scan per arrival row, which matters on wide `minutesBefore`/`minutesAfter` windows. It also makes the plural handler match the singular one (`arrival_and_departure_for_stop_handler.go:401`).\n\nOne request, two notes.\n\n**1. `arrivals_and_departures_for_stop_handler_test.go:135` \u2014 the test passes on the pre-change code too.**\n\nRevert the one-line change and it still goes green, because the old path resolved the same alert with the same ID. Good coverage of the situationIds\u2194references invariant, but it doesn't pin what this PR changed. Asserting the IDs came from the status would, replacing line 135:\n\n```go\n\trequire.NotNil(t, affectedArrival.TripStatus)\n\tassert.Equal(t, affectedArrival.TripStatus.SituationIDs, affectedArrival.SituationIDs,\n\t\t\"arrival situationIds must be the ones BuildTripStatus resolved, not a second lookup\")\n\tassert.Contains(t, affectedArrival.SituationIDs, wantSituationID,\n```\n\nThat's exactly the property the commit claims, and it breaks if someone reintroduces a separate lookup.\n\n**2. `arrivals_and_departures_for_stop_handler.go:448` \u2014 consistency nit only, fine to leave.**\n\n`statusExtras.snapshot` is read inside `if status != nil` (line 393) while `statusExtras.situations` is read outside it, so the two reads of the same struct look like they have different safety requirements. Both guards are in fact unreachable \u2014 every return in `BuildTripStatus` (`trips_helper.go:103`, `108`, `366`) passes a non-nil `status` and a non-nil `extras`. No change needed.\n\n*Correcting my earlier version of this point:* I suggested `api.tripSituationsFor(ctx, st.TripID, statusExtras)` here. That was wrong \u2014 it returns `([]string, []models.Situation)` and bypasses the `situationCollector`, which this handler needs so dedupe stays in one place and `references.Situations` is built once at line 624. Using it would mean hand-appending and hand-deduping per arrival. A nil guard would also be dead code, and risks leaving `situationIDs` nil, which marshals as `\"situationIds\": null` instead of `[]`; the current `addRefs` avoids that via `make([]string, 0, len(refs))`. The code as written is correct.\n\n**3. Commit message body has literal `\\n` instead of newlines** \u2014 renders as one unwrapped line. Worth an amend while it's a single commit.\n\nVerified against the deployed Puget Sound server: stop `1_10190` (Route 70 reroute) returns `1_86736` on each affected arrival with a matching `references.situations` entry \u2014 the shape this PR preserves. Two notes from that, both out of scope here:\n\n- Alert IDs arrive already prefixed (`1_86736`), so the idempotency guard in `situationID()` is load-bearing.\n- Prod returns `entry.situationIds: []` at the top level on that stop, while we emit the union of every collected ref. Pre-existing, but this PR now feeds that union from a new source, so it may be worth a separate look.",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-17T06:15:13Z"
+    },
+    {
+      "id": 4948993112,
+      "source": "review_body",
+      "login": "ARCoder181105",
+      "user_type": "User",
+      "body": "",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-17T06:36:12Z"
+    },
+    {
+      "id": 4949938814,
+      "source": "review_body",
+      "login": "soumajitgh",
+      "user_type": "User",
+      "body": "",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-17T08:55:06Z"
+    },
+    {
+      "id": 4952800433,
+      "source": "review_body",
+      "login": "ARCoder181105",
+      "user_type": "User",
+      "body": "LGTM",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-17T16:52:16Z"
+    },
+    {
+      "id": 4969730321,
+      "source": "review_body",
+      "login": "aaronbrethorst",
+      "user_type": "User",
+      "body": "Four lines of production code for a real win on an endpoint where\n`minutesBefore`/`minutesAfter` can each be 24 hours. Good trade.\n\nI didn't take the equivalence on faith \u2014 I traced both sides.\n`GetAlertsForTrip` (internal/gtfs/realtime.go:154) and `situationRefsForTrip`\n(internal/restapi/trips_helper.go:833) do the same resolution: `GetTrip` \u2192\n`GetRoute` \u2192 `GetAlertsByIDs(tripID, routeID, agencyID)`, both feeding\n`situationRefsFromAlerts` with the same agency. So the reused set is\ntrip+route+agency scoped exactly as before, `addRefs` allocates a fresh slice\nper call and dedupes on the same key, and `references.situations` composition is\nunchanged. Worth noting for the record: issue #1341's premise that\n`GetAlertsForTrip` \"matches on trip alone\" is stale \u2014 the two sets were already\nidentical, so this is a pure performance refactor rather than a behavior fix.\nThat's a better outcome, not a worse one, but it's worth being precise about.\n\nAlso a nice side effect: the line you removed was the handler's only `r.Context()`\nuse, which bypassed the snapshot-cache-wrapped `ctx` established earlier in the\nfunction. Everything now flows through the right context.\n\nTwo notes, neither blocking:\n\n- The new test is a good invariant guard (situationIds \u2194 references.situations),\n  but it doesn't actually pin *this* change \u2014 since both paths resolve the same\n  set, it passes on pre-change code too. @ARCoder181105 made this point on the\n  earlier revision and it still stands; the test is worth keeping, just not for\n  the reason the description gives.\n- This PR removes the last production caller of\n  `Manager.GetAlertsForTrip` \u2014 after it lands, only `realtime_test.go` exercises\n  it. CONTRIBUTING.md calls out leftover dead code specifically. I'd rather not\n  grow a 4-line perf PR to cover it, but a quick follow-up deleting that method\n  and its test would be welcome if you want to take it.\n\nMerging.\n",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-19T07:55:32Z"
+    }
+  ]
+}

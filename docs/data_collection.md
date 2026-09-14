@@ -26,7 +26,8 @@ Replay from a filled cache:
 
 ```bash
 python scripts/verify_candidates.py --cache-only
-python scripts/export_prs.py --pr 702 --cache-only
+python scripts/export_corpus.py --cache-only
+python scripts/validate_corpus.py
 python scripts/build_phase4_artifacts.py
 ```
 
@@ -131,32 +132,59 @@ Stratum counts if the additional accepts are used:
 
 Protocol §6 targeted about 4–6 concurrency PRs. The recommended set is 8 because those PRs met the gold rule. Eligible PRs were not dropped to hit the target, and ineligible PRs were not forced in to reach 30.
 
-## One-PR export
+## One-PR export (superseded)
 
-`#702` (`refactor: extract withTransaction helper for GTFS bulk imports`).
+`#702` was the Phase 4 example export. That overlay-style file list is replaced by the merge-SHA corpus export below. `#702` remains in the n=33 set.
 
+## Complete raw export (n = 33)
+
+Collection date for the full export: **2026-09-14**.
+
+Every recommended PR now has a merge-SHA-anchored raw export. The Maglev clone used to resolve those SHAs lives at `data/raw/cache/maglev` (gitignored). Diffs are taken from that commit's recorded parents, not from `HEAD`.
+
+All 33 Maglev merges in this set are two-parent merge commits. The reconstructed diff is:
+
+```text
+git diff <parent1>...<parent2>
 ```
-data/raw/prs/702/metadata.json
-data/raw/prs/702/diff.patch
-data/raw/prs/702/files.json
-data/raw/prs/702/reviews.json
-data/raw/prs/702/comments.json
-data/extracted/prs/702/  unlabeled partitions
+
+where both parents are read from the recorded merge SHA. First-parent `git diff SHA^1 SHA` is recorded only as a check. For `#457` that first-parent delta is empty (the same `RLock` already landed on main via `#456`); the three-dot range of **that merge commit** still contains `internal/restapi/routes_for_agency_handler.go`. The PR was not dropped.
+
+Per PR, `data/raw/prs/<number>/` contains:
+
+| File | Role |
+|---|---|
+| `metadata.json` | Title, author, merge SHA, parent SHAs, `diff_anchored_to_merge_sha` |
+| `diff.patch` | Complete unified diff from those parents (`--binary --find-renames`) |
+| `files.json` | Complete changed-file list from the same range (renames, deletes, binaries) |
+| `github_files.json` | GitHub PR file list used only for coverage (`/files` or public `pull/N.diff`) |
+| `reviews.json` | `/pulls/{n}/reviews` |
+| `comments.json` | Issue comments, inline review comments, and review bodies |
+
+`data/extracted/prs/<number>/` partitions comments into independent human, human-meaningful, process-only, bot, and author/study-author. `class` and `in_reference_set` stay empty / false until Phase 5.
+
+Machine-readable completeness: `data/raw/manifest.csv`.
+
+Replay:
+
+```bash
+python scripts/export_corpus.py
+python scripts/validate_corpus.py
 ```
 
-Stored fields are public logins, review/comment bodies, and file paths. Emails, tokens, and `merged_by` profile objects are not stored. Diff hunks were reconstructed from the files API `patch` field because a raw diff accept cache was not available in this tokenless run.
+Validation fails if any of the 33 recommended PRs is missing a required file, if the reconstructed diff is not anchored to the recorded merge SHA, if a GitHub PR file is absent from the reconstructed list, if author or bot rows appear in independent-human gold, or if process-only rows are mixed into the meaningful-human partition.
 
-Unlabeled extraction separates independent human, bot, and author rows. `class` and `in_reference_set` stay empty / false until Phase 5.
+Export result for this run: **33/33 complete**. Every diff is anchored to the merge SHA in `recommended_corpus.csv`. No LLM, model evaluation, scoring, or `golangci-lint` run.
 
 ## Limitations
 
 1. The Phase 4 prompt named `OneBusAway/onebusaway-application-modules`. The frozen protocol and candidate CSV are Maglev. Collection stayed on Maglev; the protocol was not switched.
 2. `GITHUB_TOKEN` was missing. A third party needs a token (or this cache) to replay live pagination.
-3. File lists for some of the original 30 were not fully cached. Eligibility for those rows used review surfaces plus a documented code-file overlay. Only `#702` has a complete exported file list and reconstructed diff.
+3. File lists for some of the original 30 were not fully cached during verification. The later n=33 export reconstructs every file list and diff from the merge SHA in a local Maglev clone. GitHub `/files` was used for coverage when the API cache had it; otherwise the public `pull/N.diff` file list was used. Both were checked against the SHA-anchored reconstruction.
 4. Protocol §4.6 (defect/design after annotation) is not applied yet.
 5. Human review gold can live in review **bodies** even when issue comments are author/bot-only. Issue-comment-only checks undercount gold (`#457` is the example).
 6. `#702` has an aaronbrethorst issue comment that is rebase/process; the gold-quality text is in the three review bodies.
 
 ## What was not run
 
-No LLM, OpenAI API, open-weight model, or `golangci-lint` run. This phase only verifies the dataset and the extraction pipeline.
+No LLM, OpenAI API, open-weight model, or `golangci-lint` run. This phase only verifies the dataset, completes the raw export, and checks the extraction pipeline.

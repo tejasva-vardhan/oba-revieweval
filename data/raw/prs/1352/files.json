@@ -1,0 +1,18 @@
+[
+  {
+    "filename": "internal/restapi/stops_for_location_handler.go",
+    "status": "modified",
+    "additions": 25,
+    "deletions": 13,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/stops_for_location_handler_test.go",
+    "status": "modified",
+    "additions": 98,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  }
+]

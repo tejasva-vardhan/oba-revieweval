@@ -1,0 +1,26 @@
+[
+  {
+    "filename": "internal/gtfs/location_params.go",
+    "status": "modified",
+    "additions": 6,
+    "deletions": 2,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/gtfs/location_params_test.go",
+    "status": "modified",
+    "additions": 33,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_for_location_handler.go",
+    "status": "modified",
+    "additions": 4,
+    "deletions": 1,
+    "previous_filename": null,
+    "binary": false
+  }
+]

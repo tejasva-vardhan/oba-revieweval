@@ -1,0 +1,8 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1288,5243442099,issue,3rabiii,human,true,false,false,false,"@aaronbrethorst Thanks for catching that! You were totally right about the ID logic. 
+I updated issue #1287 and this PR to just be a readability refactor. I cleaned up the dead code, restored the normal `log-and-continue` error handling, and fixed the merge conflicts. Everything is formatted and the CI is green. 
+Ready for another look!",,,1288-003,false
+1288,3752946664,inline,3rabiii,human,true,false,false,false,"@coderabbitai dismiss
+This PR is a refactor, not a bug fix. The test is *supposed* to pass on the old code. It proves that the new code works exactly the same as the old code without breaking anything. 
+We need to keep this test to protect the code from future bugs.",internal/restapi/trips_for_route_handler_test.go,,1288-009,false
+1288,4900516835,review_body,3rabiii,human,true,false,false,true,,,,1288-017,false

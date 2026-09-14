@@ -1,0 +1,146 @@
+[
+  {
+    "filename": "internal/models/frequency.go",
+    "status": "modified",
+    "additions": 28,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/models/frequency_test.go",
+    "status": "modified",
+    "additions": 62,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/arrival_and_departure_for_stop_handler.go",
+    "status": "modified",
+    "additions": 15,
+    "deletions": 1,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/arrival_and_departure_for_stop_handler_test.go",
+    "status": "modified",
+    "additions": 67,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/arrivals_and_departures_for_stop_handler.go",
+    "status": "modified",
+    "additions": 20,
+    "deletions": 2,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/arrivals_and_departures_for_stop_handler_test.go",
+    "status": "modified",
+    "additions": 76,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/frequency_fixture_test.go",
+    "status": "added",
+    "additions": 69,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/schedule_for_stop_handler.go",
+    "status": "modified",
+    "additions": 261,
+    "deletions": 65,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/schedule_for_stop_handler_test.go",
+    "status": "modified",
+    "additions": 130,
+    "deletions": 5,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trip_details_handler.go",
+    "status": "modified",
+    "additions": 32,
+    "deletions": 23,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trip_for_vehicle_handler.go",
+    "status": "modified",
+    "additions": 62,
+    "deletions": 39,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trip_for_vehicle_handler_test.go",
+    "status": "modified",
+    "additions": 54,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_for_location_handler.go",
+    "status": "modified",
+    "additions": 57,
+    "deletions": 28,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_for_location_handler_test.go",
+    "status": "modified",
+    "additions": 68,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_for_route_handler.go",
+    "status": "modified",
+    "additions": 118,
+    "deletions": 17,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_for_route_handler_test.go",
+    "status": "modified",
+    "additions": 135,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_helper.go",
+    "status": "modified",
+    "additions": 108,
+    "deletions": 21,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_helper_test.go",
+    "status": "modified",
+    "additions": 97,
+    "deletions": 10,
+    "previous_filename": null,
+    "binary": false
+  }
+]

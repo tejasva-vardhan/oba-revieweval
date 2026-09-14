@@ -1,0 +1,50 @@
+[
+  {
+    "filename": "internal/restapi/reference_utils.go",
+    "status": "modified",
+    "additions": 77,
+    "deletions": 20,
+    "previous_filename": null,
+    "source": "github_files_api"
+  },
+  {
+    "filename": "internal/restapi/reference_utils_test.go",
+    "status": "modified",
+    "additions": 140,
+    "deletions": 0,
+    "previous_filename": null,
+    "source": "github_files_api"
+  },
+  {
+    "filename": "internal/restapi/stops_for_agency_handler.go",
+    "status": "modified",
+    "additions": 7,
+    "deletions": 0,
+    "previous_filename": null,
+    "source": "github_files_api"
+  },
+  {
+    "filename": "internal/restapi/stops_for_agency_handler_test.go",
+    "status": "modified",
+    "additions": 47,
+    "deletions": 0,
+    "previous_filename": null,
+    "source": "github_files_api"
+  },
+  {
+    "filename": "internal/restapi/stops_for_route_handler.go",
+    "status": "modified",
+    "additions": 7,
+    "deletions": 0,
+    "previous_filename": null,
+    "source": "github_files_api"
+  },
+  {
+    "filename": "internal/restapi/stops_for_route_handler_test.go",
+    "status": "modified",
+    "additions": 45,
+    "deletions": 0,
+    "previous_filename": null,
+    "source": "github_files_api"
+  }
+]

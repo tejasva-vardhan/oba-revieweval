@@ -1,0 +1,26 @@
+[
+  {
+    "id": 4944903296,
+    "login": "copilot-pull-request-reviewer[bot]",
+    "user_type": "Bot",
+    "state": "COMMENTED",
+    "body": "## Pull request overview\n\nThis pull request fixes `stops-for-location`\u2019s `time` query parameter parsing so it correctly accepts the documented formats (epoch millis, `yyyy-MM-dd_HH-mm-ss`, and date-only) instead of silently mis-parsing the string form as a small epoch-millis value.\n\n**Changes:**\n- Replaces the handler\u2019s `fmt.Sscanf`-based time parsing with `utils.ParseTimeParameter` and introduces a helper (`queryTimeForStops`) to resolve the service-date selection time.\n- Adjusts time resolution to use an agency timezone (matching the approach used in `trips-for-location`) and keeps legacy behavior of serving malformed `time` values (HTTP 200) by falling back to \u201cnow\u201d.\n- Adds a table-driven test covering accepted formats, malformed values, and absent `time`, asserting consistent stop lists across accepted representations.\n\n### Reviewed changes\n\nCopilot reviewed 2 out of 2 changed files in this pull request and generated 1 comment.\n\n| File | Description |\n| ---- | ----------- |\n| internal/restapi/stops_for_location_handler.go | Uses `ParseTimeParameter` via a new helper to resolve the query time used for active-service date selection. |\n| internal/restapi/stops_for_location_handler_test.go | Adds coverage ensuring documented time formats are accepted and produce consistent stop lists. |\n\n\n\n\n\n\n\n---\n\n\ud83d\udca1 <a href=\"/OneBusAway/maglev/new/main?filename=.github/skills/code-review/SKILL.md\" class=\"Link--inTextBlock\" target=\"_blank\" rel=\"noopener noreferrer\">Add a `code-review` agent skill</a> or configure MCP servers for context-aware, tailored reviews. <a href=\"https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review#mcp-servers-and-agent-skills\" class=\"Link--inTextBlock\" target=\"_blank\" rel=\"noopener noreferrer\">Learn more in the docs.</a>",
+    "submitted_at": "2026-08-15T23:04:53Z"
+  },
+  {
+    "id": 4946594338,
+    "login": "copilot-pull-request-reviewer[bot]",
+    "user_type": "Bot",
+    "state": "COMMENTED",
+    "body": "## Pull request overview\n\nCopilot reviewed 2 out of 2 changed files in this pull request and generated no new comments.\n\n\n\n\n\n",
+    "submitted_at": "2026-08-16T16:02:48Z"
+  },
+  {
+    "id": 4969643941,
+    "login": "aaronbrethorst",
+    "user_type": "User",
+    "state": "APPROVED",
+    "body": "Nice catch on the underlying bug \u2014 `fmt.Sscanf(timeStr, \"%d\", &timeMs)` happily\nreading `2025` off the front of `2025-06-13_14-00-00` and resolving to 1970 is\nexactly the kind of silent wrong-answer that's hard to notice from the outside.\n\nThings I checked and that hold up:\n\n- It routes through `utils.ParseTimeParameter` rather than growing another\n  parser, which is what CONTRIBUTING.md's Code Reuse section asks for and what\n  trips-for-route, stops-for-route, vehicles-for-agency and trips-for-location\n  already do. Epoch-vs-string disambiguation is handled inside that helper, so\n  a digit-only string can't be mis-read as a date.\n- Dropping the 15-minute binning is safe \u2014 `queryTime` fed exactly one consumer,\n  `.Format(\"20060102\")`, so binning to a quarter hour never affected anything.\n- The second commit is the one I'd have asked for if it weren't here: a service\n  date is a local calendar date, so taking the fallback in the agency's zone\n  rather than the server clock's is correct, and it brings this in line with\n  trips-for-location.\n- `TestStopsForLocationUsesAgencyDateForCurrentTime` is the good test \u2014 two\n  instants that are the same local Friday but straddle UTC midnight will fail\n  if the fallback ever drifts back to the server zone. That's a real regression\n  guard, not a shape check.\n- Serving a malformed `time` as 200 rather than 400 preserves legacy behavior,\n  and thanks for calling that out in the description rather than leaving me to\n  spot it \u2014 that's the discrepancy handling CONTRIBUTING.md asks for.\n\nNon-blocking: the comment at the `currentDate` line still reads \"for the\nrequested queryTime\", but `queryTime` is the variable this PR deleted. Worth a\none-word fix next time you're in the file.\n\nMerging.\n",
+    "submitted_at": "2026-08-19T07:47:42Z"
+  }
+]

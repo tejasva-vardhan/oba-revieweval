@@ -1,0 +1,122 @@
+[
+  {
+    "id": 4886317099,
+    "login": "coderabbitai[bot]",
+    "user_type": "Bot",
+    "state": "COMMENTED",
+    "body": "**Actionable comments posted: 6**\n\n<details>\n<summary>\ud83e\udd16 Prompt for all review comments with AI agents</summary>\n\n```\nVerify each finding against current code. Fix only still-valid issues, skip the\nrest with a brief reason, keep changes minimal, and validate.\n\nInline comments:\nIn `@internal/restapi/reference_utils.go`:\n- Around line 515-530: Update situationReferences to validate that\nBuildSituationReferences returns the same number of situations as refs before\nthe index-based ID assignment; if lengths differ, fail visibly rather than\npairing or indexing mismatched entries. Preserve the existing ordered ID\nassignment when the lengths match.\n\nIn `@internal/restapi/situation_references_test.go`:\n- Around line 106-109: Add a sawSituationID boolean to the situation reference\ntest, set it when iterating emitted IDs in the existing assertion loop, and\nassert it after the loop so the test fails when no situation ID is emitted.\nFollow the sibling test pattern in trips_for_location_handler_test.go and\ntrips_for_route_handler_test.go.\n\nIn `@internal/restapi/trips_for_location_handler_test.go`:\n- Line 629: Replace the fixed time.Sleep after createTestApiWithRealTimeData\nwith a deterministic condition-based wait for the required real-time data state,\ndocumenting the condition and preserving coverage for the load-delay behavior;\nif createTestApiWithRealTimeData already guarantees synchronization, remove the\nsleep instead.\n\nIn `@internal/restapi/trips_for_route_handler.go`:\n- Line 405: Replace the per-trip situationRefsForTrip calls at both affected\nsites with the existing bulk alert-loading flow used by\ntrips_for_location_handler.go. Resolve the entry trip from fetchedTrips using\nentryTripID, derive its route and agency through tripAgencyMap/routeAgencyMap,\nthen pass the resolved IDs to GetAlertsByIDs and provide the results to\nsituations.add. Preserve interlined-block handling by sourcing the route from\nthe resolved entry trip rather than fetchedTrip unconditionally.\n- Around line 896-899: Update the GetRouteIDsForStops error path in\nrouteIDsForStops to log the query failure with logging.LogError before returning\nrouteIDsByStop, matching the error-handling pattern used by fillMissingTrips and\nfillRoutesAndAgencies.\n- Around line 908-935: Update tripReferenceList to skip trips whose resolved\nroute has an empty AgencyID, rather than relying on the map lookup\u2019s ok value;\npreserve the existing skip for missing keys and only append references when the\nroute resolution provides a non-empty agency identifier.\n```\n\n</details>\n\n<details>\n<summary>\ud83e\ude84 Autofix</summary>\n\nFix all unresolved CodeRabbit comments on this PR:\n\n- [ ] <!-- {\"checkboxId\": \"4b0d0e0a-96d7-4f10-b296-3a18ea78f0b9\"} --> Push a commit to this branch (recommended)\n- [ ] <!-- {\"checkboxId\": \"ff5b1114-7d8c-49e6-8ac1-43f82af23a33\"} --> Create a new PR with the fixes\n\n</details>\n\n---\n\n<details>\n<summary>\u2139\ufe0f Review info</summary>\n\n<details>\n<summary>\u2699\ufe0f Run configuration</summary>\n\n**Configuration used**: Repository UI\n\n**Review profile**: ASSERTIVE\n\n**Plan**: Pro Plus\n\n**Run ID**: `a692a796-9d77-4fb1-a464-7b8d64238790`\n\n</details>\n\n<details>\n<summary>\ud83d\udce5 Commits</summary>\n\nReviewing files that changed from the base of the PR and between f84051ae52d4e4a87046f9b2e3ae2ab9a46841c8 and 64590c8d69e6473143b5696634452f0cb135d247.\n\n</details>\n\n<details>\n<summary>\ud83d\udcd2 Files selected for processing (11)</summary>\n\n* `internal/restapi/arrival_and_departure_for_stop_handler.go`\n* `internal/restapi/arrivals_and_departures_for_stop_handler.go`\n* `internal/restapi/reference_utils.go`\n* `internal/restapi/situation_references_test.go`\n* `internal/restapi/trip_details_handler.go`\n* `internal/restapi/trip_for_vehicle_handler.go`\n* `internal/restapi/trips_for_location_handler.go`\n* `internal/restapi/trips_for_location_handler_test.go`\n* `internal/restapi/trips_for_route_handler.go`\n* `internal/restapi/trips_for_route_handler_test.go`\n* `internal/restapi/trips_helper.go`\n\n</details>\n\n</details>\n\n<!-- This is an auto-generated comment by CodeRabbit for review status -->",
+    "submitted_at": "2026-08-07T20:24:26Z"
+  },
+  {
+    "id": 4889361297,
+    "login": "Ahmedhossamdev",
+    "user_type": "User",
+    "state": "COMMENTED",
+    "body": "",
+    "submitted_at": "2026-08-08T17:56:11Z"
+  },
+  {
+    "id": 4895984619,
+    "login": "coderabbitai[bot]",
+    "user_type": "Bot",
+    "state": "COMMENTED",
+    "body": "**Actionable comments posted: 3**\n\n> [!CAUTION]\n> Some comments are outside the diff and can\u2019t be posted inline due to platform limitations.\n> \n> \n> \n> <details>\n> <summary>\u26a0\ufe0f Outside diff range comments (1)</summary><blockquote>\n> \n> <details>\n> <summary>internal/restapi/situation_references_test.go (1)</summary><blockquote>\n> \n> `66-78`: _\ud83e\ude7a Stability & Availability_ | _\ud83d\udfe1 Minor_ | _\u26a1 Quick win_\n> \n> **Wait for the initial real-time feed before selecting the vehicle.**\n> \n> `createTestApiWithRealTimeData` returns before the first feed poll. `anyRealTimeVehicleID(t, api)` runs immediately on Line 78 and can fail before the endpoint checks. Wait until real-time vehicles are available before `AddAlertForTest` and vehicle selection, as in `internal/restapi/trips_for_location_handler_test.go` Lines 629-633.\n> \n> <details>\n> <summary>\ud83e\udd16 Prompt for AI Agents</summary>\n> \n> ```\n> Verify each finding against current code. Fix only still-valid issues, skip the\n> rest with a brief reason, keep changes minimal, and validate.\n> \n> In `@internal/restapi/situation_references_test.go` around lines 66 - 78, Wait for\n> the initial real-time feed to populate vehicles immediately after\n> createTestApiWithRealTimeData and before AddAlertForTest and\n> anyRealTimeVehicleID. Reuse the established wait pattern from\n> trips_for_location_handler_test.go so vehicle selection only occurs once\n> real-time data is available.\n> ```\n> \n> </details>\n> \n> <!-- cr-comment:v1:ab89a144a5014ea2313bf17f -->\n> \n> </blockquote></details>\n> \n> </blockquote></details>\n\n<details>\n<summary>\ud83e\udd16 Prompt for all review comments with AI agents</summary>\n\n```\nVerify each finding against current code. Fix only still-valid issues, skip the\nrest with a brief reason, keep changes minimal, and validate.\n\nInline comments:\nIn `@internal/restapi/situation_references_test.go`:\n- Around line 161-205: The test only validates each agency lookup independently\nand does not verify deduplication when both results are combined. Extend\nTestSituationRefsFromAlertsAgencyScope or add an endpoint-level assertion that\ncollects references from both caller agencies, then require exactly one\nreferences.situations entry whose ID is the alert\u2019s agency-qualified ID.\n- Around line 120-126: Strengthen both resolution tests to assert the seeded\nalert\u2019s specific ID, not merely that any situation ID was emitted. In\ninternal/restapi/situation_references_test.go:120-126, require\n25_situation-resolution-alert in emitted; in\ninternal/restapi/trips_for_location_handler_test.go:653-660, require\n25_test-alert-trips-for-location among the collected entry situation IDs.\n\nIn `@internal/restapi/trips_for_route_handler.go`:\n- Around line 337-340: Update the selected-trip handling around\nresolveInterlinedEntryTripID so every resolution.SelectedTrip appended to\nfetchedTrips is also indexed in tripsByID. Ensure its route agency is added to\nrouteAgencyMap when absent, preserving the prefetched lookup path used by\ntripSituationRefs and avoiding fallback database queries.\n\n---\n\nOutside diff comments:\nIn `@internal/restapi/situation_references_test.go`:\n- Around line 66-78: Wait for the initial real-time feed to populate vehicles\nimmediately after createTestApiWithRealTimeData and before AddAlertForTest and\nanyRealTimeVehicleID. Reuse the established wait pattern from\ntrips_for_location_handler_test.go so vehicle selection only occurs once\nreal-time data is available.\n```\n\n</details>\n\n<details>\n<summary>\ud83e\ude84 Autofix</summary>\n\nFix all unresolved CodeRabbit comments on this PR:\n\n- [ ] <!-- {\"checkboxId\": \"4b0d0e0a-96d7-4f10-b296-3a18ea78f0b9\"} --> Push a commit to this branch (recommended)\n- [ ] <!-- {\"checkboxId\": \"ff5b1114-7d8c-49e6-8ac1-43f82af23a33\"} --> Create a new PR with the fixes\n\n</details>\n\n---\n\n<details>\n<summary>\u2139\ufe0f Review info</summary>\n\n<details>\n<summary>\u2699\ufe0f Run configuration</summary>\n\n**Configuration used**: Repository UI\n\n**Review profile**: ASSERTIVE\n\n**Plan**: Pro Plus\n\n**Run ID**: `4b0f5e79-504e-4645-acf2-8154daaa93e5`\n\n</details>\n\n<details>\n<summary>\ud83d\udce5 Commits</summary>\n\nReviewing files that changed from the base of the PR and between 64590c8d69e6473143b5696634452f0cb135d247 and 181a0846f4aef5e810abe0184b5e114d6911c542.\n\n</details>\n\n<details>\n<summary>\ud83d\udcd2 Files selected for processing (4)</summary>\n\n* `internal/restapi/reference_utils.go`\n* `internal/restapi/situation_references_test.go`\n* `internal/restapi/trips_for_location_handler_test.go`\n* `internal/restapi/trips_for_route_handler.go`\n\n</details>\n\n</details>\n\n<!-- This is an auto-generated comment by CodeRabbit for review status -->",
+    "submitted_at": "2026-08-10T10:51:47Z"
+  },
+  {
+    "id": 4896034643,
+    "login": "ARCoder181105",
+    "user_type": "User",
+    "state": "COMMENTED",
+    "body": "",
+    "submitted_at": "2026-08-10T10:58:54Z"
+  },
+  {
+    "id": 4896037179,
+    "login": "ARCoder181105",
+    "user_type": "User",
+    "state": "COMMENTED",
+    "body": "",
+    "submitted_at": "2026-08-10T10:59:13Z"
+  },
+  {
+    "id": 4896038320,
+    "login": "ARCoder181105",
+    "user_type": "User",
+    "state": "COMMENTED",
+    "body": "",
+    "submitted_at": "2026-08-10T10:59:24Z"
+  },
+  {
+    "id": 4922067762,
+    "login": "burma-shave",
+    "user_type": "User",
+    "state": "COMMENTED",
+    "body": "Stage 2 code-quality pass on top of the situation-references fix. Three follow-ups on the redundant-lookup theme this PR already tackles, plus one narrow edge case to flag for awareness.\n\nStage 1 (spec-conformance) is settled separately: the idempotent agency-prefixing, the informed-entity agency-scoping, and the pre-existing situationIds absent-vs-empty-array behavior were all reviewed and are being kept as-is, documented in maglev.wiki's Implementation Decisions sections rather than changed here.",
+    "submitted_at": "2026-08-12T23:40:29Z"
+  },
+  {
+    "id": 4922082749,
+    "login": "burma-shave",
+    "user_type": "User",
+    "state": "CHANGES_REQUESTED",
+    "body": "",
+    "submitted_at": "2026-08-12T23:43:56Z"
+  },
+  {
+    "id": 4937568593,
+    "login": "ARCoder181105",
+    "user_type": "User",
+    "state": "COMMENTED",
+    "body": "",
+    "submitted_at": "2026-08-14T13:27:29Z"
+  },
+  {
+    "id": 4937572182,
+    "login": "ARCoder181105",
+    "user_type": "User",
+    "state": "COMMENTED",
+    "body": "",
+    "submitted_at": "2026-08-14T13:27:49Z"
+  },
+  {
+    "id": 4937575835,
+    "login": "ARCoder181105",
+    "user_type": "User",
+    "state": "COMMENTED",
+    "body": "",
+    "submitted_at": "2026-08-14T13:28:10Z"
+  },
+  {
+    "id": 4937579644,
+    "login": "ARCoder181105",
+    "user_type": "User",
+    "state": "COMMENTED",
+    "body": "",
+    "submitted_at": "2026-08-14T13:28:31Z"
+  },
+  {
+    "id": 4937582535,
+    "login": "ARCoder181105",
+    "user_type": "User",
+    "state": "COMMENTED",
+    "body": "",
+    "submitted_at": "2026-08-14T13:28:48Z"
+  },
+  {
+    "id": 4937585710,
+    "login": "ARCoder181105",
+    "user_type": "User",
+    "state": "COMMENTED",
+    "body": "",
+    "submitted_at": "2026-08-14T13:29:05Z"
+  },
+  {
+    "id": 4940660977,
+    "login": "burma-shave",
+    "user_type": "User",
+    "state": "APPROVED",
+    "body": "",
+    "submitted_at": "2026-08-14T19:47:38Z"
+  }
+]

@@ -1,0 +1,34 @@
+[
+  {
+    "filename": "internal/restapi/location_params.go",
+    "status": "added",
+    "additions": 48,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/routes_for_location_handler.go",
+    "status": "modified",
+    "additions": 8,
+    "deletions": 17,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/stops_for_location_handler.go",
+    "status": "modified",
+    "additions": 6,
+    "deletions": 16,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_for_location_handler.go",
+    "status": "modified",
+    "additions": 23,
+    "deletions": 24,
+    "previous_filename": null,
+    "binary": false
+  }
+]

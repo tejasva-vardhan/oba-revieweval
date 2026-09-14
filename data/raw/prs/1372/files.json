@@ -1,0 +1,74 @@
+[
+  {
+    "filename": "gtfsdb/client.go",
+    "status": "modified",
+    "additions": 90,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "gtfsdb/db.go",
+    "status": "modified",
+    "additions": 20,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "gtfsdb/helpers.go",
+    "status": "modified",
+    "additions": 23,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "gtfsdb/helpers_test.go",
+    "status": "modified",
+    "additions": 8,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "gtfsdb/models.go",
+    "status": "modified",
+    "additions": 5,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "gtfsdb/query.sql",
+    "status": "modified",
+    "additions": 20,
+    "deletions": 7,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "gtfsdb/query.sql.go",
+    "status": "modified",
+    "additions": 35,
+    "deletions": 10,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "gtfsdb/schema.sql",
+    "status": "modified",
+    "additions": 22,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "gtfsdb/stop_agency_test.go",
+    "status": "added",
+    "additions": 272,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  }
+]

@@ -1,0 +1,45 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1296,5230230128,issue,aaronbrethorst,human,false,false,true,false,"### Code review
+
+Found 1 issue:
+
+1. The `fix:` commit makes an existing comment in this same file factually wrong. `TestTripsForRouteHandler_RouteVariations` still says ""ParseTimeParameter ignores api.Clock when no time= is given"" — after this PR, `utils.ParseTimeParameter` takes the clock and uses it for the omitted-`time` branch, which is precisely what `TestTripsForRouteHandler_TimeOmitted` now relies on. Left as-is it will mislead the next contributor about the helper's contract (CONTRIBUTING.md: ""Add an inline comment when there's a non-obvious constraint, workaround, or invariant a reader couldn't infer from the code itself""). Passing an explicit `time=` there is still worth doing, but the stated reason is no longer true.
+
+https://github.com/OneBusAway/maglev/blob/a6b13490967861740faf4502ccc30e0ee6ca5e1a/internal/restapi/trips_for_route_handler_test.go#L151-L155
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+ - If this code review was useful, please react with 👍. Otherwise, react with 👎. 
+",,,1296-002,false
+1296,5288280738,issue,aaronbrethorst,human,false,false,true,false,"### Code review
+
+No issues found. Checked for bugs and CLAUDE.md compliance.
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+",,,1296-004,false
+1296,4890748270,review_body,aaronbrethorst,human,false,false,true,false,"The substance here is good, and better than the `test:` title suggests — threading `api.Clock` into `ParseTimeParameter` is a real fix, and you updated all four production call sites and all five test call sites consistently. The omitted-`time` test is genuinely load-bearing too: it fails without the clock change, because the fixture trip only falls inside the window at the pinned clock. That's the right way to write a regression test.
+
+One blocker, and it isn't about your code.
+
+**This won't compile once merged.** It calls `createTestApiWithTripsForRouteFixture`, which was removed from `main` and replaced by the generic `createTestApiWithGTFSFixture(t, clock, zipName, files)`. Merging your branch into current `main` locally and running `go vet`:
+
+```
+internal/restapi/trips_for_route_handler_test.go:422:9: undefined: createTestApiWithTripsForRouteFixture
+```
+
+The PR shows MERGEABLE with every check green because CI ran against a merge ref computed before that helper was deleted — so nothing on our side flagged it. Rebasing onto current `main` and porting the two new tests to `createTestApiWithGTFSFixture` should be all it takes.
+
+While you're in there, one small thing this PR invalidates: the comment at `trips_for_route_handler_test.go:152` still says ""ParseTimeParameter ignores api.Clock when no time= is given"", which your own fix makes untrue. It's on a line you didn't touch, but this is the change that breaks it.
+
+Worth splitting the title/description too — a signature change to a shared util under a `test:` heading is easy to miss in the log. Your commits do delineate the two concerns properly, which is the part that actually matters.
+
+Re-review as soon as it's rebased; the fix itself I'm happy with.
+",,,1296-008,false
+1296,4933040191,review_body,aaronbrethorst,human,false,false,true,false,"This looks good — ready to merge.
+
+The clock threading is complete and consistent. I grepped for `ParseTimeParameter` and all four production call sites are updated with no stragglers, and since `createClock` returns `clock.RealClock{}` for everything but the test environment, this is a genuine no-op in production — the only reachable behavior change is under a mock clock, which is the whole point.
+
+What I appreciated is that the new tests actually depend on the change. `TestTripsForRouteHandler_TimeOmitted` only passes because the fixture trip falls inside the window of the pinned clock; under the old `time.Now()` behavior it would fail outside a narrow wall-clock window. That is the difference between a test that documents behavior and one that just happens to be green.
+
+The stale comment I flagged last time (""ParseTimeParameter ignores api.Clock when no time= is given"") is gone and replaced with an accurate one.
+",,,1296-010,false

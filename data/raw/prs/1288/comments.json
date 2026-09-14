@@ -1,0 +1,217 @@
+{
+  "issue_comments": [
+    {
+      "id": 5171402872,
+      "source": "issue",
+      "login": "coderabbitai[bot]",
+      "user_type": "Bot",
+      "body": " \n \n\n[![Review Change Stack](https://storage.googleapis.com/coderabbit_public_assets/review-stack-in-coderabbit-ui.svg)](https://app.coderabbit.ai/change-stack/OneBusAway/maglev/pull/1288?utm_source=github_walkthrough&utm_medium=github&utm_campaign=change_stack)\n\n \n \n\n \n \ud83d\udcdd Walkthrough \n\n## Walkthrough\n\nThe handler now explicitly tracks referenced trip IDs and fetches missing records. Tests cover adjacent trips, entry and active-trip references, and partial results when selected lookups fail.\n\n### Changes\n\n**Trip reference population**\n\n|Layer / File(s)|Summary|\n|---|---|\n|**Explicit referenced-trip tracking** `internal/restapi/trips_for_route_handler.go`|`buildTripReferences` records missing entry, schedule next/previous, and active-status trip IDs. It fetches those IDs instead of scanning empty placeholder records.|\n|**Adjacent trip reference validation** `internal/restapi/trips_for_route_handler_test.go`|A three-trip block fixture and integration tests verify complete trip references. Failure-injection tests verify that lookup failures retain successful references and return HTTP 200.|\n\n**Estimated code review effort:** 2 (Simple) | ~10 minutes\n\n**Possibly related issues**\n\n- OneBusAway/maglev issue 1287: Addresses the same `buildTripReferences` behavior involving empty records for block-adjacent trips.\n\n**Possibly related PRs**\n\n- [OneBusAway/maglev#1000](https://github.com/OneBusAway/maglev/pull/1000): Modifies trip-reference handling in `trips_for_route_handler.go`.\n- [OneBusAway/maglev#1101](https://github.com/OneBusAway/maglev/pull/1101): Updates resolution of schedule- and status-related trip references.\n- [OneBusAway/maglev#1218](https://github.com/OneBusAway/maglev/pull/1218): Modifies `buildTripReferences` and its tests.\n\n**Suggested reviewers:** `burma-shave`, `aaronbrethorst`, `ahmedhossamdev`\n\n \n\n \n \n\n \n \ud83d\udea5 Pre-merge checks | \u2705 4 | \u274c 1 \n\n### \u274c Failed checks (1 warning)\n\n| Check name | Status | Explanation | Resolution |\n| :----------------: | :--------- | :------------------------------------------------------------------------------------ | :--------------------------------------------------------------------------------- |\n| Docstring Coverage | \u26a0\ufe0f Warning | Docstring coverage is 75.00% which is insufficient. The required threshold is 80.00%. | Write docstrings for the functions missing them to satisfy the coverage threshold. |\n\n \n \u2705 Passed checks (4 passed) \n\n| Check name | Status | Explanation |\n| :------------------------: | :------- | :---------------------------------------------------------------------------------- |\n| Linked Issues check | \u2705 Passed | Check skipped because no linked issues were found for this pull request. |\n| Out of Scope Changes check | \u2705 Passed | Check skipped because no linked issues were found for this pull request. |\n| Description Check | \u2705 Passed | Check skipped - CodeRabbit\u2019s high-level summary is enabled. |\n| Title check | \u2705 Passed | The title clearly and concisely describes the main refactor in buildTripReferences. |\n\n \n\n \n\n \n \n\n---\n\nThanks for using [CodeRabbit](https://coderabbit.ai?utm_source=oss&utm_medium=github&utm_campaign=OneBusAway/maglev&utm_content=1288)! It's free for OSS, and your support helps us grow. If you like it, consider giving us a shout-out.\n\n \n \u2764\ufe0f Share \n\n- [X](https://twitter.com/intent/tweet?text=I%20just%20used%20%40coderabbitai%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20the%20proprietary%20code.%20Check%20it%20out%3A&url=https%3A//coderabbit.ai)\n- [Mastodon](https://mastodon.social/share?text=I%20just%20used%20%40coderabbitai%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20the%20proprietary%20code.%20Check%20it%20out%3A%20https%3A%2F%2Fcoderabbit.ai)\n- [Reddit](https://www.reddit.com/submit?title=Great%20tool%20for%20code%20review%20-%20CodeRabbit&text=I%20just%20used%20CodeRabbit%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20proprietary%20code.%20Check%20it%20out%3A%20https%3A//coderabbit.ai)\n- [LinkedIn](https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fcoderabbit.ai&mini=true&title=Great%20tool%20for%20code%20review%20-%20CodeRabbit&summary=I%20just%20used%20CodeRabbit%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20proprietary%20code)\n\n \n\n\n Comment `@coderabbitai help` to get the list of available commands. \n\n ",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-03T20:33:37Z"
+    },
+    {
+      "id": 5230223358,
+      "source": "issue",
+      "login": "aaronbrethorst",
+      "user_type": "User",
+      "body": "### Code review\n\nFound 2 issues:\n\n1. The new `sql.ErrNoRows` \u2192 404 branch is unreachable and reintroduces a 404 that this handler deliberately no longer has. `GetTripsByIDs` is a sqlc `:many` query (`-- name: GetTripsByIDs :many` in `gtfsdb/query.sql`), so it returns an empty slice with a nil error and never `sql.ErrNoRows` \u2014 the PR's own commit message acknowledges this (\"since SQL IN queries do not return sql.ErrNoRows naturally\"), and the two new tests only reach the branch by injecting `sql.ErrNoRows` through a `tripFetchFailureDB` wrapper into a query that cannot produce it. Commit 3dd2995e removed the identical dead check from this same handler for the same reason, and `trips-for-route` on main now has zero `sendNotFound` calls: \"The trips-for-route spec guarantees 200 OK even for unknown routes and out-of-service-area conditions, with no error or 404 case defined.\" A missing *reference* trip should not turn a successful route response into a 404. The same dead branch is also added at the early-return path (line ~195), where `buildTripReferences` is called with an empty entry list and `nil` prefetched trips and therefore can never fetch anything or error.\n\nhttps://github.com/OneBusAway/maglev/blob/383fdccc0160c7368194c19cf27d4947479efbe9/internal/restapi/trips_for_route_handler.go#L474-L484\n\n2. The `referencedTripIDs` refactor is behavior-neutral, so the new regression test does not actually cover the reported bug. Every placeholder inserted into `presentTrips` is a bare `models.Trip{}` (lines 539, 550, 559, 570), and those are the only entries with an empty `ID` \u2014 prefetched trips come from `gtfsdb.Trip` rows whose `ID` is the primary key. The old `if t.ID == \"\"` loop therefore selected exactly the same ID set that `referencedTripIDs` now tracks, meaning adjacent block trips were already being fetched. `TestTripsForRouteHandler_BlockSequence_AdjacentTripReferences` would pass against `buildTripReferences` on main unchanged, so it does not demonstrate the empty-object behavior described in #1287. If empty adjacent-trip references are genuinely being observed, the cause is elsewhere and this change won't fix it; worth confirming the failing case reproduces before merging.\n\nhttps://github.com/OneBusAway/maglev/blob/383fdccc0160c7368194c19cf27d4947479efbe9/internal/restapi/trips_for_route_handler.go#L576-L586\n\n\ud83e\udd16 Generated with [Claude Code](https://claude.ai/code)\n\n - If this code review was useful, please react with \ud83d\udc4d. Otherwise, react with \ud83d\udc4e. \n",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-09T06:47:55Z"
+    },
+    {
+      "id": 5243442099,
+      "source": "issue",
+      "login": "3rabiii",
+      "user_type": "User",
+      "body": "@aaronbrethorst Thanks for catching that! You were totally right about the ID logic. \r\nI updated issue #1287 and this PR to just be a readability refactor. I cleaned up the dead code, restored the normal `log-and-continue` error handling, and fixed the merge conflicts. Everything is formatted and the CI is green. \r\nReady for another look!",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-10T17:05:18Z"
+    },
+    {
+      "id": 5272233061,
+      "source": "issue",
+      "login": "sonarqubecloud[bot]",
+      "user_type": "Bot",
+      "body": "## [![Quality Gate Passed](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/checks/QualityGateBadge/qg-passed-20px.png 'Quality Gate Passed')](https://sonarcloud.io/dashboard?id=OneBusAway_maglev&pullRequest=1288) **Quality Gate passed** \nIssues \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0 New issues](https://sonarcloud.io/project/issues?id=OneBusAway_maglev&pullRequest=1288&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true) \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/accepted-16px.png '') [0 Accepted issues](https://sonarcloud.io/project/issues?id=OneBusAway_maglev&pullRequest=1288&issueStatuses=ACCEPTED)\n\nMeasures \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0 Security Hotspots](https://sonarcloud.io/project/security_hotspots?id=OneBusAway_maglev&pullRequest=1288&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true) \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0.0% Coverage on New Code](https://sonarcloud.io/component_measures?id=OneBusAway_maglev&pullRequest=1288&metric=new_coverage&view=list) \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0.0% Duplication on New Code](https://sonarcloud.io/component_measures?id=OneBusAway_maglev&pullRequest=1288&metric=new_duplicated_lines_density&view=list) \n \n \n[See analysis details on SonarQube Cloud](https://sonarcloud.io/dashboard?id=OneBusAway_maglev&pullRequest=1288)\n\n",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-12T20:08:26Z"
+    }
+  ],
+  "inline_comments": [
+    {
+      "id": 3707482388,
+      "source": "inline",
+      "login": "coderabbitai[bot]",
+      "user_type": "Bot",
+      "body": "_\ud83d\udcd0 Maintainability & Code Quality_ | _\ud83d\udfe1 Minor_ | _\u26a1 Quick win_\n\n**Cover the remaining missing-reference paths.**\n\nThis test covers unprefetched `PreviousTripId` and `NextTripId`. It does not cover an entry `TripId` or `Status.ActiveTripID` that is absent from `preFetchedTrips`.\n\nAdd cases that pass each ID type for an unprefetched static trip. Assert that each resulting `references.trips` record has populated route, headsign, block, and service fields.\n\nAs per coding guidelines, \u201cCover every new branch or condition with tests.\u201d\n\n<details>\n<summary>\ud83e\udd16 Prompt for AI Agents</summary>\n\n```\nVerify each finding against current code. Fix only still-valid issues, skip the\nrest with a brief reason, keep changes minimal, and validate.\n\nIn `@internal/restapi/trips_for_route_handler_test.go` around lines 612 - 651,\nExtend TestTripsForRouteHandler_BlockSequence_AdjacentTripReferences with cases\nfor an unprefetched static trip referenced by the entry TripId and by\nStatus.ActiveTripID. For each case, invoke the handler and assert the\ncorresponding references.trips record is present with populated RouteID,\nTripHeadsign, BlockID, and ServiceID fields, covering both missing-reference\npaths.\n```\n\n</details>\n\n<!-- fingerprinting:phantom:poseidon:terra -->\n\n<!-- cr-indicator-types:potential_issue -->\n\n<!-- cr-comment:v1:a0a685d72590a35e27fb804c -->\n\n_Source: Coding guidelines_\n\n<!-- This is an auto-generated comment by CodeRabbit -->",
+      "inline": true,
+      "path": "internal/restapi/trips_for_route_handler_test.go",
+      "line": 1197,
+      "created_at": "2026-08-03T20:35:03Z"
+    },
+    {
+      "id": 3707482395,
+      "source": "inline",
+      "login": "coderabbitai[bot]",
+      "user_type": "Bot",
+      "body": "_\ud83d\uddc4\ufe0f Data Integrity & Integration_ | _\ud83d\udfe0 Major_ | _\ud83c\udfd7\ufe0f Heavy lift_\n\n**Propagate referenced-trip lookup failures.**\n\nIf `GetTripsByIDs` fails at Lines 565-568, this function logs the error and returns a successful response. The unresolved placeholder has no route, so Lines 667-683 omit it from `references.trips`. The response then contains schedule or status IDs without their required trip references.\n\nChange `buildTripReferences` to return an error. Propagate it from both callers and send a 500 response.\n\nAs per coding guidelines, \u201cWhen a database lookup fails, return 404 via `sendNotFound` only for `errors.Is(err, sql.ErrNoRows)`; route all other errors through `serverErrorResponse` as 500.\u201d\n\n<details>\n<summary>\ud83e\udd16 Prompt for AI Agents</summary>\n\n```\nVerify each finding against current code. Fix only still-valid issues, skip the\nrest with a brief reason, keep changes minimal, and validate.\n\nIn `@internal/restapi/trips_for_route_handler.go` around lines 559 - 561, Update\nbuildTripReferences to return lookup errors from GetTripsByIDs instead of\nlogging and producing incomplete references; propagate this error through both\ncallers and respond with serverErrorResponse (500). Preserve sendNotFound only\nwhen errors.Is(err, sql.ErrNoRows), routing all other failures through the 500\npath.\n```\n\n</details>\n\n<!-- fingerprinting:phantom:poseidon:terra -->\n\n<!-- cr-indicator-types:potential_issue -->\n\n<!-- cr-comment:v1:b6e488ec0deb89c0b1adf7e8 -->\n\n_Source: Coding guidelines_\n\n<!-- This is an auto-generated comment by CodeRabbit -->",
+      "inline": true,
+      "path": "internal/restapi/trips_for_route_handler.go",
+      "line": 775,
+      "created_at": "2026-08-03T20:35:03Z"
+    },
+    {
+      "id": 3708226178,
+      "source": "inline",
+      "login": "coderabbitai[bot]",
+      "user_type": "Bot",
+      "body": "_\ud83d\udcd0 Maintainability & Code Quality_ | _\ud83d\udfe1 Minor_ | _\u26a1 Quick win_\n\n<details>\n<summary>\ud83e\udde9 Analysis chain</summary>\n\n\ud83c\udfc1 Script executed:\n\n```shell\n#!/bin/bash\nset -euo pipefail\n\nast-grep outline internal/restapi/trips_for_route_handler_test.go --items all\nrg -n -C 5 'buildTripReferences|sql\\.ErrNoRows|serverErrorResponse|sendNotFound|GetTripsByIDs' \\\n  internal/restapi/trips_for_route_handler_test.go\n```\n\nRepository: OneBusAway/maglev\n\nLength of output: 2689\n\n---\n\n\ud83c\udfc1 Script executed:\n\n```shell\n#!/bin/bash\nset -euo pipefail\n\necho \"== handler file outline ==\"\nast-grep outline internal/restapi/trips_for_route_handler.go --items all || true\n\necho \"== relevant implementation slices ==\"\nwc -l internal/restapi/trips_for_route_handler.go internal/restapi/trips_for_route_handler_test.go\nsed -n '1,240p' internal/restapi/trips_for_route_handler.go\nsed -n '420,505p' internal/restapi/trips_for_route_handler_test.go\nsed -n '630,710p' internal/restapi/trips_for_route_handler_test.go\n\necho \"== buildTripReferences usages ==\"\nrg -n -C 4 'buildTripReferences\\(' internal/restapi\n```\n\nRepository: OneBusAway/maglev\n\nLength of output: 20758\n\n---\n\n\n\n</details>\n\n**Cover the `buildTripReferences` error branches in handler tests.**\n\n`tripsForRouteHandler` routes `buildTripReferences` errors to `api.sendNotFound(w, r)` on `sql.ErrNoRows` and `api.serverErrorResponse(w, r, err)` otherwise. The existing tests only exercise successful reference resolution. Add handler-level tests for each referenced lookup error and assert the required 404/500 responses.\n\n<details>\n<summary>\ud83e\udd16 Prompt for AI Agents</summary>\n\n```\nVerify each finding against current code. Fix only still-valid issues, skip the\nrest with a brief reason, keep changes minimal, and validate.\n\nIn `@internal/restapi/trips_for_route_handler_test.go` around lines 654 - 702, Add\nhandler-level tests covering both error branches from buildTripReferences: make\na referenced trip lookup return sql.ErrNoRows and assert tripsForRouteHandler\nresponds with 404, then make another referenced lookup return a non-ErrNoRows\nerror and assert it responds with 500. Reuse the existing handler/test fixture\nsetup and verify the responses through the handler\u2019s HTTP result, while\npreserving the successful reference-resolution test.\n```\n\n</details>\n\n<!-- fingerprinting:phantom:poseidon:terra -->\n\n<!-- cr-indicator-types:potential_issue -->\n\n<!-- cr-comment:v1:992df1ee83ddd44379ba9ca1 -->\n\n_Source: Coding guidelines_\n\n<!-- This is an auto-generated comment by CodeRabbit -->\n\n\u2705 Addressed in commit 383fdcc",
+      "inline": true,
+      "path": "internal/restapi/trips_for_route_handler_test.go",
+      "line": 1247,
+      "created_at": "2026-08-03T22:53:58Z"
+    },
+    {
+      "id": 3751666614,
+      "source": "inline",
+      "login": "coderabbitai[bot]",
+      "user_type": "Bot",
+      "body": "_\ud83c\udfaf Functional Correctness_ | _\ud83d\udfe0 Major_ | _\u26a1 Quick win_\n\n**Make this regression test demonstrate the reported defect.**\n\nThe supplied PR objective states that the previous `t.ID == \"\"` heuristic selects the same zero-value placeholder trips as `referencedTripIDs`. This fixture creates those placeholders. Therefore, this test can pass before the refactor and does not show that issue `#1287` is fixed.\n\nAdd a case that fails with the previous implementation. Otherwise, remove or re-scope the behavior-neutral refactor.\n\n\n\n\n\n\n\n```shell\n#!/bin/bash\nset -euo pipefail\n\ngit show HEAD^:internal/restapi/trips_for_route_handler.go |\n  rg -n -C 10 'buildTripReferences|t\\.ID == \"\"|GetTripsByIDs'\n\nrg -n -C 8 'TestTripsForRouteHandler_BlockSequence_AdjacentTripReferences|blockSequenceFiles' \\\n  internal/restapi/trips_for_route_handler_test.go\n```\n\n<details>\n<summary>\ud83e\udd16 Prompt for AI Agents</summary>\n\n```\nVerify each finding against current code. Fix only still-valid issues, skip the\nrest with a brief reason, keep changes minimal, and validate.\n\nIn `@internal/restapi/trips_for_route_handler_test.go` around lines 1151 - 1197,\nMake TestTripsForRouteHandler_BlockSequence_AdjacentTripReferences exercise a\nreferenced adjacent trip that is also represented by a non-empty fetched trip,\nso the prior t.ID == \"\" heuristic would select the zero-value placeholder and\nfail the assertions. Adjust the fixture or test setup to create this\nduplicate-ID case, while preserving validation that both adjacent references\ncontain complete, distinct trip records; otherwise remove the behavior-neutral\nregression test.\n```\n\n</details>\n\n<!-- fingerprinting:phantom:poseidon:tapir -->\n\n<!-- cr-indicator-types:potential_issue -->\n\n<!-- cr-comment:v1:fb62e87330fce8c3c32f7fad -->\n\n<!-- This is an auto-generated reply by CodeRabbit -->",
+      "inline": true,
+      "path": "internal/restapi/trips_for_route_handler_test.go",
+      "line": 1197,
+      "created_at": "2026-08-10T17:05:30Z"
+    },
+    {
+      "id": 3752946664,
+      "source": "inline",
+      "login": "3rabiii",
+      "user_type": "User",
+      "body": "@coderabbitai dismiss\r\nThis PR is a refactor, not a bug fix. The test is *supposed* to pass on the old code. It proves that the new code works exactly the same as the old code without breaking anything. \r\nWe need to keep this test to protect the code from future bugs.",
+      "inline": true,
+      "path": "internal/restapi/trips_for_route_handler_test.go",
+      "line": 1197,
+      "created_at": "2026-08-10T20:04:03Z"
+    },
+    {
+      "id": 3752949711,
+      "source": "inline",
+      "login": "coderabbitai[bot]",
+      "user_type": "Bot",
+      "body": "`@3rabiii`, dismissed. The test is valid as a behavior-preserving regression test for this refactor. It does not need to fail against the previous implementation.\n\n\ud83d\udc07\n<!-- <review_comment_withdrawn> -->\n\n<sub>You are interacting with an AI system.</sub>\n\n<!-- This is an auto-generated reply by CodeRabbit -->",
+      "inline": true,
+      "path": "internal/restapi/trips_for_route_handler_test.go",
+      "line": 1197,
+      "created_at": "2026-08-10T20:04:31Z"
+    },
+    {
+      "id": 3770121932,
+      "source": "inline",
+      "login": "burma-shave",
+      "user_type": "User",
+      "body": "`referencedTripIDs` is redundant given the dedup check already in place. All four insertion sites (lines ~734-737, ~745-748, ~754-757, ~765-768) are already gated by `if _, exists := presentTrips[id]; !exists { ... }` - that guard *is* \"not yet fetched.\" `tripIDsToFetch` could be appended to directly inside each of those guards (`tripIDsToFetch = append(tripIDsToFetch, id)`), which would drop this map plus the second loop here (lines 773-776) entirely, while keeping the same explicit-tracking intent the PR is going for - just without the extra map that has to be kept in sync by convention across four call sites.",
+      "inline": true,
+      "path": "internal/restapi/trips_for_route_handler.go",
+      "line": 774,
+      "created_at": "2026-08-12T20:34:23Z"
+    }
+  ],
+  "review_bodies": [
+    {
+      "id": 4848320233,
+      "source": "review_body",
+      "login": "coderabbitai[bot]",
+      "user_type": "Bot",
+      "body": "**Actionable comments posted: 2**\n\n<details>\n<summary>\ud83e\udd16 Prompt for all review comments with AI agents</summary>\n\n```\nVerify each finding against current code. Fix only still-valid issues, skip the\nrest with a brief reason, keep changes minimal, and validate.\n\nInline comments:\nIn `@internal/restapi/trips_for_route_handler_test.go`:\n- Around line 612-651: Extend\nTestTripsForRouteHandler_BlockSequence_AdjacentTripReferences with cases for an\nunprefetched static trip referenced by the entry TripId and by\nStatus.ActiveTripID. For each case, invoke the handler and assert the\ncorresponding references.trips record is present with populated RouteID,\nTripHeadsign, BlockID, and ServiceID fields, covering both missing-reference\npaths.\n\nIn `@internal/restapi/trips_for_route_handler.go`:\n- Around line 559-561: Update buildTripReferences to return lookup errors from\nGetTripsByIDs instead of logging and producing incomplete references; propagate\nthis error through both callers and respond with serverErrorResponse (500).\nPreserve sendNotFound only when errors.Is(err, sql.ErrNoRows), routing all other\nfailures through the 500 path.\n```\n\n</details>\n\n<details>\n<summary>\ud83e\ude84 Autofix (Beta)</summary>\n\nFix all unresolved CodeRabbit comments on this PR:\n\n- [ ] <!-- {\"checkboxId\": \"4b0d0e0a-96d7-4f10-b296-3a18ea78f0b9\"} --> Push a commit to this branch (recommended)\n- [ ] <!-- {\"checkboxId\": \"ff5b1114-7d8c-49e6-8ac1-43f82af23a33\"} --> Create a new PR with the fixes\n\n</details>\n\n---\n\n<details>\n<summary>\u2139\ufe0f Review info</summary>\n\n<details>\n<summary>\u2699\ufe0f Run configuration</summary>\n\n**Configuration used**: Repository UI\n\n**Review profile**: ASSERTIVE\n\n**Plan**: Pro Plus\n\n**Run ID**: `799e5525-fd4f-4a1e-a164-093d5667db1d`\n\n</details>\n\n<details>\n<summary>\ud83d\udce5 Commits</summary>\n\nReviewing files that changed from the base of the PR and between 3b73fd9d1f0f25061b1bb591fb3616df57ebe202 and 2ffe5dd61aa82df859cab0fcc674faa3c553b238.\n\n</details>\n\n<details>\n<summary>\ud83d\udcd2 Files selected for processing (2)</summary>\n\n* `internal/restapi/trips_for_route_handler.go`\n* `internal/restapi/trips_for_route_handler_test.go`\n\n</details>\n\n</details>\n\n<!-- This is an auto-generated comment by CodeRabbit for review status -->",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-03T20:35:04Z"
+    },
+    {
+      "id": 4849168622,
+      "source": "review_body",
+      "login": "coderabbitai[bot]",
+      "user_type": "Bot",
+      "body": "**Actionable comments posted: 1**\n\n<details>\n<summary>\ud83e\udd16 Prompt for all review comments with AI agents</summary>\n\n```\nVerify each finding against current code. Fix only still-valid issues, skip the\nrest with a brief reason, keep changes minimal, and validate.\n\nInline comments:\nIn `@internal/restapi/trips_for_route_handler_test.go`:\n- Around line 654-702: Add handler-level tests covering both error branches from\nbuildTripReferences: make a referenced trip lookup return sql.ErrNoRows and\nassert tripsForRouteHandler responds with 404, then make another referenced\nlookup return a non-ErrNoRows error and assert it responds with 500. Reuse the\nexisting handler/test fixture setup and verify the responses through the\nhandler\u2019s HTTP result, while preserving the successful reference-resolution\ntest.\n```\n\n</details>\n\n<details>\n<summary>\ud83e\ude84 Autofix (Beta)</summary>\n\nFix all unresolved CodeRabbit comments on this PR:\n\n- [ ] <!-- {\"checkboxId\": \"4b0d0e0a-96d7-4f10-b296-3a18ea78f0b9\"} --> Push a commit to this branch (recommended)\n- [ ] <!-- {\"checkboxId\": \"ff5b1114-7d8c-49e6-8ac1-43f82af23a33\"} --> Create a new PR with the fixes\n\n</details>\n\n---\n\n<details>\n<summary>\u2139\ufe0f Review info</summary>\n\n<details>\n<summary>\u2699\ufe0f Run configuration</summary>\n\n**Configuration used**: Repository UI\n\n**Review profile**: ASSERTIVE\n\n**Plan**: Pro Plus\n\n**Run ID**: `f0db8e36-ffb6-4f01-8739-3b36443578e9`\n\n</details>\n\n<details>\n<summary>\ud83d\udce5 Commits</summary>\n\nReviewing files that changed from the base of the PR and between 2ffe5dd61aa82df859cab0fcc674faa3c553b238 and f802e7045e5769c1a02bed911ea9a353bd2cb7e6.\n\n</details>\n\n<details>\n<summary>\ud83d\udcd2 Files selected for processing (2)</summary>\n\n* `internal/restapi/trips_for_route_handler.go`\n* `internal/restapi/trips_for_route_handler_test.go`\n\n</details>\n\n</details>\n\n<!-- This is an auto-generated comment by CodeRabbit for review status -->",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-03T22:54:00Z"
+    },
+    {
+      "id": 4890748411,
+      "source": "review_body",
+      "login": "aaronbrethorst",
+      "user_type": "User",
+      "body": "Replacing the `t.ID == \"\"` zero-value heuristic with an explicit set of referenced trip IDs is a readability win \u2014 encoding \"which trips do we still need to fetch\" as an actual set rather than inferring it from a sentinel is the better expression of the intent. The `DBTX` wrapper for forcing lookup failures is a nice testing technique too.\n\nTwo things are blocking, though.\n\n**1. The refactor is behavior-neutral, so it doesn't fix #1287.** Placeholders are always bare `models.Trip{}`, and prefetched trips always carry a non-empty primary-key ID, so the old `t.ID == \"\"` loop selected exactly the same set that `referencedTripIDs` now tracks. `TestTripsForRouteHandler_BlockSequence_AdjacentTripReferences` would pass against the current `buildTripReferences` on `main` unchanged. Whatever is actually causing the empty adjacent-trip references in #1287, this isn't it \u2014 so there's a reproducing case still to find before a fix is worth landing.\n\n**2. The `sql.ErrNoRows` \u2192 404 branch is dead, and reintroduces something deliberately removed.** `GetTripsByIDs` is a sqlc `:many` query, so it never returns `ErrNoRows` \u2014 the 404 tests only reach that branch through an injected error the DB layer can't produce. More to the point, `3dd2995e` removed the identical dead check from this same handler on the grounds that the trips-for-route spec defines no 404 case, and `main`'s handler has no `sendNotFound` at all: even a missing agency returns an empty 200 list (`trips_for_route_handler.go:39-45`). A reference-lookup failure shouldn't be the thing that reintroduces a 404 here.\n\nRelated and worth deciding deliberately rather than by default: escalating a `buildTripReferences` DB failure to a 500 also reverses this handler's posture. `main` logs and continues when reference resolution fails, and `3dd2995e` argues explicitly that a per-entry resolution failure shouldn't fail the whole response. CONTRIBUTING's non-`ErrNoRows` \u2192 500 rule does cut the other way, so I don't think you were wrong to reach for it \u2014 but this handler has an established answer and it's the other one.\n\nThe branch also conflicts with `main` now; `buildTripReferences` has gained a `stopIDMap` parameter since you cut it.\n\nIf you can get a reproducing case for #1287 I'm very interested \u2014 the underlying report may well be real even though this change doesn't move it.\n",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-09T07:10:52Z"
+    },
+    {
+      "id": 4892804918,
+      "source": "review_body",
+      "login": "coderabbitai[bot]",
+      "user_type": "Bot",
+      "body": "\n\n> [!CAUTION]\n> Some comments are outside the diff and can\u2019t be posted inline due to platform limitations.\n> \n> \n> \n> <details>\n> <summary>\u26a0\ufe0f Outside diff range comments (1)</summary><blockquote>\n> \n> <details>\n> <summary>internal/restapi/trips_for_route_handler.go (1)</summary><blockquote>\n> \n> `563-563`: _\ud83d\udcd0 Maintainability & Code Quality_ | _\ud83d\udd35 Trivial_ | _\ud83d\udca4 Low value_\n> \n> **Wrap the compound conditions.**\n> \n> - `internal/restapi/trips_for_route_handler.go#L563-L563`: put each validity condition on a separate continuation line.\n> - `internal/restapi/trips_for_route_handler_test.go#L1192-L1193`: put each assertion condition on a separate continuation line.\n> \n> As per coding guidelines, \u201cWrap long multi-clause boolean expressions.\u201d\n> \n> <details>\n> <summary>\ud83e\udd16 Prompt for AI Agents</summary>\n> \n> ```\n> Verify each finding against current code. Fix only still-valid issues, skip the\n> rest with a brief reason, keep changes minimal, and validate.\n> \n> In `@internal/restapi/trips_for_route_handler.go` at line 563, Wrap the compound\n> boolean expressions into continuation lines: in\n> internal/restapi/trips_for_route_handler.go lines 563-563, place each validity\n> condition in the bt route filter on its own line; in\n> internal/restapi/trips_for_route_handler_test.go lines 1192-1193, place each\n> assertion condition on its own continuation line. Preserve the existing logic\n> and conditions.\n> ```\n> \n> </details>\n> \n> <!-- cr-comment:v1:1b05f01c65fcb8c8b4a71301 -->\n> \n> _Source: Coding guidelines_\n> \n> </blockquote></details>\n> \n> </blockquote></details>\n\n<details>\n<summary>\ud83e\udd16 Prompt for all review comments with AI agents</summary>\n\n```\nVerify each finding against current code. Fix only still-valid issues, skip the\nrest with a brief reason, keep changes minimal, and validate.\n\nOutside diff comments:\nIn `@internal/restapi/trips_for_route_handler.go`:\n- Line 563: Wrap the compound boolean expressions into continuation lines: in\ninternal/restapi/trips_for_route_handler.go lines 563-563, place each validity\ncondition in the bt route filter on its own line; in\ninternal/restapi/trips_for_route_handler_test.go lines 1192-1193, place each\nassertion condition on its own continuation line. Preserve the existing logic\nand conditions.\n```\n\n</details>\n\n---\n\n<details>\n<summary>\u2139\ufe0f Review info</summary>\n\n<details>\n<summary>\u2699\ufe0f Run configuration</summary>\n\n**Configuration used**: Repository UI\n\n**Review profile**: ASSERTIVE\n\n**Plan**: Pro Plus\n\n**Run ID**: `8d2fa79c-abcf-4b30-9516-d068ae75b10b`\n\n</details>\n\n<details>\n<summary>\ud83d\udce5 Commits</summary>\n\nReviewing files that changed from the base of the PR and between f802e7045e5769c1a02bed911ea9a353bd2cb7e6 and 065d24be682c079707d21e5f8589c4e04a32651a.\n\n</details>\n\n<details>\n<summary>\ud83d\udcd2 Files selected for processing (2)</summary>\n\n* `internal/restapi/trips_for_route_handler.go`\n* `internal/restapi/trips_for_route_handler_test.go`\n\n</details>\n\n</details>\n\n<!-- This is an auto-generated comment by CodeRabbit for review status -->",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-09T23:12:57Z"
+    },
+    {
+      "id": 4899198542,
+      "source": "review_body",
+      "login": "coderabbitai[bot]",
+      "user_type": "Bot",
+      "body": "**Actionable comments posted: 1**\n\n<details>\n<summary>\ud83e\udd16 Prompt for all review comments with AI agents</summary>\n\n```\nVerify each finding against current code. Fix only still-valid issues, skip the\nrest with a brief reason, keep changes minimal, and validate.\n\nInline comments:\nIn `@internal/restapi/trips_for_route_handler_test.go`:\n- Around line 1151-1197: Make\nTestTripsForRouteHandler_BlockSequence_AdjacentTripReferences exercise a\nreferenced adjacent trip that is also represented by a non-empty fetched trip,\nso the prior t.ID == \"\" heuristic would select the zero-value placeholder and\nfail the assertions. Adjust the fixture or test setup to create this\nduplicate-ID case, while preserving validation that both adjacent references\ncontain complete, distinct trip records; otherwise remove the behavior-neutral\nregression test.\n```\n\n</details>\n\n<details>\n<summary>\ud83e\ude84 Autofix</summary>\n\nFix all unresolved CodeRabbit comments on this PR:\n\n- [ ] <!-- {\"checkboxId\": \"4b0d0e0a-96d7-4f10-b296-3a18ea78f0b9\"} --> Push a commit to this branch (recommended)\n- [ ] <!-- {\"checkboxId\": \"ff5b1114-7d8c-49e6-8ac1-43f82af23a33\"} --> Create a new PR with the fixes\n\n</details>\n\n---\n\n<details>\n<summary>\u2139\ufe0f Review info</summary>\n\n<details>\n<summary>\u2699\ufe0f Run configuration</summary>\n\n**Configuration used**: Repository UI\n\n**Review profile**: ASSERTIVE\n\n**Plan**: Pro Plus\n\n**Run ID**: `5e980811-242c-4ae7-9754-ecabdcf1aa47`\n\n</details>\n\n<details>\n<summary>\ud83d\udce5 Commits</summary>\n\nReviewing files that changed from the base of the PR and between 065d24be682c079707d21e5f8589c4e04a32651a and eabd0ae04696c78902fe826f65163d20b10fecb7.\n\n</details>\n\n<details>\n<summary>\ud83d\udcd2 Files selected for processing (2)</summary>\n\n* `internal/restapi/trips_for_route_handler.go`\n* `internal/restapi/trips_for_route_handler_test.go`\n\n</details>\n\n</details>\n\n<!-- This is an auto-generated comment by CodeRabbit for review status -->",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-10T17:05:31Z"
+    },
+    {
+      "id": 4900516835,
+      "source": "review_body",
+      "login": "3rabiii",
+      "user_type": "User",
+      "body": "",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-10T20:04:03Z"
+    },
+    {
+      "id": 4900520317,
+      "source": "review_body",
+      "login": "coderabbitai[bot]",
+      "user_type": "Bot",
+      "body": "",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-10T20:04:31Z"
+    },
+    {
+      "id": 4920893466,
+      "source": "review_body",
+      "login": "burma-shave",
+      "user_type": "User",
+      "body": "## Two-stage review (spec conformance + code quality)\n\n**Spec conformance:** Verified this refactor is behavior-neutral. I traced all\nfour `referencedTripIDs` insertion sites (`preFetchedTrips` loop, entry\n`TripId` loop, `schedule.previousTripId`/`nextTripId` loop, `status.activeTripId`\nloop) against the old `t.ID == \"\"` heuristic they replace - in every case,\nincluding IDs referenced from multiple places, the new set-based fetch list is\nidentical to the old one. No new spec deviation is introduced by this PR, and\nthe new tests are solid regression coverage for the existing (unchanged)\nreference-resolution behavior.\n\nReviewing this did surface a pre-existing, previously undocumented deviation\nin this handler: when a referenced-trip/route DB lookup inside\n`buildTripReferences` fails, Maglev logs and returns `200 OK` with that\nreference silently dropped, whereas Java's `TripsForRouteAction.show()` only\ncatches `OutOfServiceAreaServiceException` and lets any other exception\npropagate to a `500`. This predates #1288 (it's the posture `3dd2995e`\ndeliberately established) and isn't something to change in this PR - it's now\nrecorded in `maglev.wiki`'s Implementation Decisions for `trips-for-route`, no\naction needed here.\n\n**Code quality:** two small items below - a simplification and a commit-message\nnit. Neither is functionally broken, so not blocking, but worth tightening\nbefore merge.\n\n---\n\nTwo things noticed while reading the surrounding code that are **out of scope\nfor this PR** (different handler / pre-existing lines untouched by this diff),\nflagging only so they don't get lost:\n\n- `trips_for_route_handler.go:883` - `if route, ok := presentRoutes[trip.RouteID]; ok`\n  checks map-key presence, not whether the route was actually resolved. A\n  placeholder route key is inserted before `GetRoutesByIDs` fills it in, so if\n  that batched fetch fails, the trip is still emitted with an empty\n  `AgencyID`, producing a malformed combined ID (e.g. `\"_1234\"`). Pre-existing,\n  untouched by this diff - probably worth its own issue.\n- `trip_details_handler.go`'s `buildReferencedTrips` has the same\n  drop-on-not-found pattern for a trip referenced by `status.ActiveTripID`,\n  which can legitimately miss for DUPLICATED GTFS-RT trips with synthetic IDs\n  (per `trips_helper.go`'s own comments). That feeds into an iOS force-unwrap\n  (`OBAKitCore/Models/REST/TripStatus.swift:198`) on endpoints iOS calls\n  constantly - looks like a real crash risk, unrelated to this PR, worth its\n  own issue.",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-08-12T20:34:23Z"
+    }
+  ]
+}

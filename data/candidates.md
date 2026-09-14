@@ -59,5 +59,6 @@ Verification: `data/candidates/pr_verification.csv`. Collection notes: `docs/dat
 - Excluded: `#1374`, `#1365`, `#1284`, `#1378`
 - Additional accepts (not inserted into this table): `#457`, `#354`, `#372`, `#541`, `#756`, `#691`, `#271`
 - Recommended corpus: **n = 33** (`data/candidates/recommended_corpus.csv`)
+- Raw export for all 33: `data/raw/prs/<number>/` and `data/raw/manifest.csv`
 
 `#457` does have independent human **review bodies**. The 2026-09-13 issue-comment-only check missed them. That is a collection-method correction, not a protocol change.

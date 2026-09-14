@@ -1,0 +1,90 @@
+[
+  {
+    "filename": "internal/restapi/arrival_and_departure_for_stop_handler.go",
+    "status": "modified",
+    "additions": 5,
+    "deletions": 11,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/arrivals_and_departures_for_stop_handler.go",
+    "status": "modified",
+    "additions": 12,
+    "deletions": 38,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/reference_utils.go",
+    "status": "modified",
+    "additions": 167,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/situation_references_test.go",
+    "status": "added",
+    "additions": 331,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trip_details_handler.go",
+    "status": "modified",
+    "additions": 6,
+    "deletions": 14,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trip_for_vehicle_handler.go",
+    "status": "modified",
+    "additions": 6,
+    "deletions": 7,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_for_location_handler.go",
+    "status": "modified",
+    "additions": 25,
+    "deletions": 25,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_for_location_handler_test.go",
+    "status": "modified",
+    "additions": 42,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_for_route_handler.go",
+    "status": "modified",
+    "additions": 283,
+    "deletions": 182,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_for_route_handler_test.go",
+    "status": "modified",
+    "additions": 52,
+    "deletions": 1,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_helper.go",
+    "status": "modified",
+    "additions": 27,
+    "deletions": 29,
+    "previous_filename": null,
+    "binary": false
+  }
+]

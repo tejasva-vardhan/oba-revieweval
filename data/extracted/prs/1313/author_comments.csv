@@ -1,0 +1,43 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1313,5221214538,issue,ARCoder181105,human,true,false,false,false,@coderabbitai full review,,,1313-002,false
+1313,5221835079,issue,ARCoder181105,human,true,false,false,false,"Found the issue to be a global , I tried to make the changes complete for other endpoint as well so that a final PR fix be made , the reason the PR went this large...",,,1313-004,false
+1313,5293859483,issue,ARCoder181105,human,true,false,false,false,@Ahmedhossamdev done resolved the merge conflict also addressed the requested changes ready for review,,,1313-007,false
+1313,3748854621,inline,ARCoder181105,human,true,false,false,false,"Fixed in 9185418. Took the agency from the alert's own informed entity instead of deduping on alert.ID, so the route path and the stop path derive the same ID rather than one prefix winning. Applied in situationRefsFromAlerts, so it covers every call site, not just this handler.
+
+Skipped the feed agency-ids[0] half of the suggestion: alerts are merged across feeds before any handler sees them, so plumbing feed identity through is a much bigger change than the informed-entity path it would only back up. The remaining gap is an alert that names no agency entity at all it still falls back to the caller's agency and can diverge. Doesn't apply to the alerts you decoded, which all carry one.
+
+`TestSituationRefsFromAlertsAgencyScope` (14cdf96) runs both caller agencies through one collector and asserts the collected IDs: one entry when the alert names an agency, two when it doesn't, so the limitation is pinned rather than implied.",internal/restapi/arrivals_and_departures_for_stop_handler.go,,1313-021,false
+1313,3748856820,inline,ARCoder181105,human,true,false,false,false,"Added in 181a084  dropped into the table as you said, taking the trip anyTripAndStop already returns for the stop plus the pinned fixture date as serviceDate. The assertions were also tightened in 14cdf96 to require the seeded alert's own ID rather than just any situationId.",internal/restapi/situation_references_test.go,,1313-022,false
+1313,3748857799,inline,ARCoder181105,human,true,false,false,false,"Written up in the PR description under ""Deviation from Java"", including the edge you flagged where an alert ID beginning with the agency ID plus an underscore is left unprefixed.",internal/restapi/reference_utils.go,,1313-023,false
+1313,3784019063,inline,ARCoder181105,human,true,false,false,false,"Addressed in 6033fa4. BuildTripStatus now returns the situations it
+resolved, and this line reuses them instead of re-querying. Falls back to
+its own lookup only when includeStatus was false and no status was built.",internal/restapi/trip_details_handler.go,,1313-030,false
+1313,3784021652,inline,ARCoder181105,human,true,false,false,false,"Addressed in 6033fa4, same fix as the sibling handlers — the situations
+come back from BuildTripStatus now, so the second lookup is gone.",internal/restapi/trip_for_vehicle_handler.go,,1313-031,false
+1313,3784024342,inline,ARCoder181105,human,true,false,false,false,"Addressed in 6033fa4. This handler calls BuildTripStatus unconditionally,
+so it always reuses the resolved situations — no fallback path here.",internal/restapi/arrival_and_departure_for_stop_handler.go,,1313-032,false
+1313,3784027234,inline,ARCoder181105,human,true,false,false,false,"Resolved in 6033fa4. GetSituationIDsForTrip had only one caller, the
+status line inside BuildTripStatus; with the references now reaching
+callers intact it was deleted, and the shared situationIDsFromRefs is the
+single extraction point.",internal/restapi/trips_helper.go,,1313-033,false
+1313,3784029405,inline,ARCoder181105,human,true,false,false,false,"Addressed in 8264b72. baseTrip is resolved before the situation lookup and
+indexed into tripsByID, so this reuses the same cache the interlined path
+does. The separate GetTrip below is removed.",internal/restapi/trips_for_route_handler.go,,1313-034,false
+1313,3784031733,inline,ARCoder181105,human,true,false,false,false,"Addressed in 45f26fd — this branch now takes the same situationRefsForTrip
+fallback as the tripsByID miss above.
+
+Worth noting the impact is larger than an ID-shape difference: with an
+empty agency the alert isn't matched at all. Reverting the fix against a
+constructed unmapped-route case returns no refs rather than a bare ID.
+That's from a unit test, not proof GetRoutesByIDs can drop a referenced
+route in production — but the fallback is cheap and the failure mode is
+silent, so it seemed worth closing either way.",internal/restapi/trips_for_route_handler.go,,1313-035,false
+1313,4896034643,review_body,ARCoder181105,human,true,false,false,true,,,,1313-039,false
+1313,4896037179,review_body,ARCoder181105,human,true,false,false,true,,,,1313-040,false
+1313,4896038320,review_body,ARCoder181105,human,true,false,false,true,,,,1313-041,false
+1313,4937568593,review_body,ARCoder181105,human,true,false,false,true,,,,1313-044,false
+1313,4937572182,review_body,ARCoder181105,human,true,false,false,true,,,,1313-045,false
+1313,4937575835,review_body,ARCoder181105,human,true,false,false,true,,,,1313-046,false
+1313,4937579644,review_body,ARCoder181105,human,true,false,false,true,,,,1313-047,false
+1313,4937582535,review_body,ARCoder181105,human,true,false,false,true,,,,1313-048,false
+1313,4937585710,review_body,ARCoder181105,human,true,false,false,true,,,,1313-049,false

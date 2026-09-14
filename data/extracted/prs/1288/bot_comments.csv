@@ -1,0 +1,634 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1288,5171402872,issue,coderabbitai[bot],bot,false,false,false,false," 
+ 
+
+[![Review Change Stack](https://storage.googleapis.com/coderabbit_public_assets/review-stack-in-coderabbit-ui.svg)](https://app.coderabbit.ai/change-stack/OneBusAway/maglev/pull/1288?utm_source=github_walkthrough&utm_medium=github&utm_campaign=change_stack)
+
+ 
+ 
+
+ 
+ 📝 Walkthrough 
+
+## Walkthrough
+
+The handler now explicitly tracks referenced trip IDs and fetches missing records. Tests cover adjacent trips, entry and active-trip references, and partial results when selected lookups fail.
+
+### Changes
+
+**Trip reference population**
+
+|Layer / File(s)|Summary|
+|---|---|
+|**Explicit referenced-trip tracking** `internal/restapi/trips_for_route_handler.go`|`buildTripReferences` records missing entry, schedule next/previous, and active-status trip IDs. It fetches those IDs instead of scanning empty placeholder records.|
+|**Adjacent trip reference validation** `internal/restapi/trips_for_route_handler_test.go`|A three-trip block fixture and integration tests verify complete trip references. Failure-injection tests verify that lookup failures retain successful references and return HTTP 200.|
+
+**Estimated code review effort:** 2 (Simple) | ~10 minutes
+
+**Possibly related issues**
+
+- OneBusAway/maglev issue 1287: Addresses the same `buildTripReferences` behavior involving empty records for block-adjacent trips.
+
+**Possibly related PRs**
+
+- [OneBusAway/maglev#1000](https://github.com/OneBusAway/maglev/pull/1000): Modifies trip-reference handling in `trips_for_route_handler.go`.
+- [OneBusAway/maglev#1101](https://github.com/OneBusAway/maglev/pull/1101): Updates resolution of schedule- and status-related trip references.
+- [OneBusAway/maglev#1218](https://github.com/OneBusAway/maglev/pull/1218): Modifies `buildTripReferences` and its tests.
+
+**Suggested reviewers:** `burma-shave`, `aaronbrethorst`, `ahmedhossamdev`
+
+ 
+
+ 
+ 
+
+ 
+ 🚥 Pre-merge checks | ✅ 4 | ❌ 1 
+
+### ❌ Failed checks (1 warning)
+
+| Check name | Status | Explanation | Resolution |
+| :----------------: | :--------- | :------------------------------------------------------------------------------------ | :--------------------------------------------------------------------------------- |
+| Docstring Coverage | ⚠️ Warning | Docstring coverage is 75.00% which is insufficient. The required threshold is 80.00%. | Write docstrings for the functions missing them to satisfy the coverage threshold. |
+
+ 
+ ✅ Passed checks (4 passed) 
+
+| Check name | Status | Explanation |
+| :------------------------: | :------- | :---------------------------------------------------------------------------------- |
+| Linked Issues check | ✅ Passed | Check skipped because no linked issues were found for this pull request. |
+| Out of Scope Changes check | ✅ Passed | Check skipped because no linked issues were found for this pull request. |
+| Description Check | ✅ Passed | Check skipped - CodeRabbit’s high-level summary is enabled. |
+| Title check | ✅ Passed | The title clearly and concisely describes the main refactor in buildTripReferences. |
+
+ 
+
+ 
+
+ 
+ 
+
+---
+
+Thanks for using [CodeRabbit](https://coderabbit.ai?utm_source=oss&utm_medium=github&utm_campaign=OneBusAway/maglev&utm_content=1288)! It's free for OSS, and your support helps us grow. If you like it, consider giving us a shout-out.
+
+ 
+ ❤️ Share 
+
+- [X](https://twitter.com/intent/tweet?text=I%20just%20used%20%40coderabbitai%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20the%20proprietary%20code.%20Check%20it%20out%3A&url=https%3A//coderabbit.ai)
+- [Mastodon](https://mastodon.social/share?text=I%20just%20used%20%40coderabbitai%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20the%20proprietary%20code.%20Check%20it%20out%3A%20https%3A%2F%2Fcoderabbit.ai)
+- [Reddit](https://www.reddit.com/submit?title=Great%20tool%20for%20code%20review%20-%20CodeRabbit&text=I%20just%20used%20CodeRabbit%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20proprietary%20code.%20Check%20it%20out%3A%20https%3A//coderabbit.ai)
+- [LinkedIn](https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fcoderabbit.ai&mini=true&title=Great%20tool%20for%20code%20review%20-%20CodeRabbit&summary=I%20just%20used%20CodeRabbit%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20proprietary%20code)
+
+ 
+
+
+ Comment `@coderabbitai help` to get the list of available commands. 
+
+ ",,,1288-001,false
+1288,5272233061,issue,sonarqubecloud[bot],bot,false,false,false,false,"## [![Quality Gate Passed](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/checks/QualityGateBadge/qg-passed-20px.png 'Quality Gate Passed')](https://sonarcloud.io/dashboard?id=OneBusAway_maglev&pullRequest=1288) **Quality Gate passed** 
+Issues 
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0 New issues](https://sonarcloud.io/project/issues?id=OneBusAway_maglev&pullRequest=1288&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true) 
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/accepted-16px.png '') [0 Accepted issues](https://sonarcloud.io/project/issues?id=OneBusAway_maglev&pullRequest=1288&issueStatuses=ACCEPTED)
+
+Measures 
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0 Security Hotspots](https://sonarcloud.io/project/security_hotspots?id=OneBusAway_maglev&pullRequest=1288&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true) 
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0.0% Coverage on New Code](https://sonarcloud.io/component_measures?id=OneBusAway_maglev&pullRequest=1288&metric=new_coverage&view=list) 
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0.0% Duplication on New Code](https://sonarcloud.io/component_measures?id=OneBusAway_maglev&pullRequest=1288&metric=new_duplicated_lines_density&view=list) 
+ 
+ 
+[See analysis details on SonarQube Cloud](https://sonarcloud.io/dashboard?id=OneBusAway_maglev&pullRequest=1288)
+
+",,,1288-004,false
+1288,3707482388,inline,coderabbitai[bot],bot,false,false,false,false,"_📐 Maintainability & Code Quality_ | _🟡 Minor_ | _⚡ Quick win_
+
+**Cover the remaining missing-reference paths.**
+
+This test covers unprefetched `PreviousTripId` and `NextTripId`. It does not cover an entry `TripId` or `Status.ActiveTripID` that is absent from `preFetchedTrips`.
+
+Add cases that pass each ID type for an unprefetched static trip. Assert that each resulting `references.trips` record has populated route, headsign, block, and service fields.
+
+As per coding guidelines, “Cover every new branch or condition with tests.”
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against current code. Fix only still-valid issues, skip the
+rest with a brief reason, keep changes minimal, and validate.
+
+In `@internal/restapi/trips_for_route_handler_test.go` around lines 612 - 651,
+Extend TestTripsForRouteHandler_BlockSequence_AdjacentTripReferences with cases
+for an unprefetched static trip referenced by the entry TripId and by
+Status.ActiveTripID. For each case, invoke the handler and assert the
+corresponding references.trips record is present with populated RouteID,
+TripHeadsign, BlockID, and ServiceID fields, covering both missing-reference
+paths.
+```
+
+</details>
+
+<!-- fingerprinting:phantom:poseidon:terra -->
+
+<!-- cr-indicator-types:potential_issue -->
+
+<!-- cr-comment:v1:a0a685d72590a35e27fb804c -->
+
+_Source: Coding guidelines_
+
+<!-- This is an auto-generated comment by CodeRabbit -->",internal/restapi/trips_for_route_handler_test.go,,1288-005,false
+1288,3707482395,inline,coderabbitai[bot],bot,false,false,false,false,"_🗄️ Data Integrity & Integration_ | _🟠 Major_ | _🏗️ Heavy lift_
+
+**Propagate referenced-trip lookup failures.**
+
+If `GetTripsByIDs` fails at Lines 565-568, this function logs the error and returns a successful response. The unresolved placeholder has no route, so Lines 667-683 omit it from `references.trips`. The response then contains schedule or status IDs without their required trip references.
+
+Change `buildTripReferences` to return an error. Propagate it from both callers and send a 500 response.
+
+As per coding guidelines, “When a database lookup fails, return 404 via `sendNotFound` only for `errors.Is(err, sql.ErrNoRows)`; route all other errors through `serverErrorResponse` as 500.”
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against current code. Fix only still-valid issues, skip the
+rest with a brief reason, keep changes minimal, and validate.
+
+In `@internal/restapi/trips_for_route_handler.go` around lines 559 - 561, Update
+buildTripReferences to return lookup errors from GetTripsByIDs instead of
+logging and producing incomplete references; propagate this error through both
+callers and respond with serverErrorResponse (500). Preserve sendNotFound only
+when errors.Is(err, sql.ErrNoRows), routing all other failures through the 500
+path.
+```
+
+</details>
+
+<!-- fingerprinting:phantom:poseidon:terra -->
+
+<!-- cr-indicator-types:potential_issue -->
+
+<!-- cr-comment:v1:b6e488ec0deb89c0b1adf7e8 -->
+
+_Source: Coding guidelines_
+
+<!-- This is an auto-generated comment by CodeRabbit -->",internal/restapi/trips_for_route_handler.go,,1288-006,false
+1288,3708226178,inline,coderabbitai[bot],bot,false,false,false,false,"_📐 Maintainability & Code Quality_ | _🟡 Minor_ | _⚡ Quick win_
+
+<details>
+<summary>🧩 Analysis chain</summary>
+
+🏁 Script executed:
+
+```shell
+#!/bin/bash
+set -euo pipefail
+
+ast-grep outline internal/restapi/trips_for_route_handler_test.go --items all
+rg -n -C 5 'buildTripReferences|sql\.ErrNoRows|serverErrorResponse|sendNotFound|GetTripsByIDs' \
+  internal/restapi/trips_for_route_handler_test.go
+```
+
+Repository: OneBusAway/maglev
+
+Length of output: 2689
+
+---
+
+🏁 Script executed:
+
+```shell
+#!/bin/bash
+set -euo pipefail
+
+echo ""== handler file outline ==""
+ast-grep outline internal/restapi/trips_for_route_handler.go --items all || true
+
+echo ""== relevant implementation slices ==""
+wc -l internal/restapi/trips_for_route_handler.go internal/restapi/trips_for_route_handler_test.go
+sed -n '1,240p' internal/restapi/trips_for_route_handler.go
+sed -n '420,505p' internal/restapi/trips_for_route_handler_test.go
+sed -n '630,710p' internal/restapi/trips_for_route_handler_test.go
+
+echo ""== buildTripReferences usages ==""
+rg -n -C 4 'buildTripReferences\(' internal/restapi
+```
+
+Repository: OneBusAway/maglev
+
+Length of output: 20758
+
+---
+
+
+
+</details>
+
+**Cover the `buildTripReferences` error branches in handler tests.**
+
+`tripsForRouteHandler` routes `buildTripReferences` errors to `api.sendNotFound(w, r)` on `sql.ErrNoRows` and `api.serverErrorResponse(w, r, err)` otherwise. The existing tests only exercise successful reference resolution. Add handler-level tests for each referenced lookup error and assert the required 404/500 responses.
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against current code. Fix only still-valid issues, skip the
+rest with a brief reason, keep changes minimal, and validate.
+
+In `@internal/restapi/trips_for_route_handler_test.go` around lines 654 - 702, Add
+handler-level tests covering both error branches from buildTripReferences: make
+a referenced trip lookup return sql.ErrNoRows and assert tripsForRouteHandler
+responds with 404, then make another referenced lookup return a non-ErrNoRows
+error and assert it responds with 500. Reuse the existing handler/test fixture
+setup and verify the responses through the handler’s HTTP result, while
+preserving the successful reference-resolution test.
+```
+
+</details>
+
+<!-- fingerprinting:phantom:poseidon:terra -->
+
+<!-- cr-indicator-types:potential_issue -->
+
+<!-- cr-comment:v1:992df1ee83ddd44379ba9ca1 -->
+
+_Source: Coding guidelines_
+
+<!-- This is an auto-generated comment by CodeRabbit -->
+
+✅ Addressed in commit 383fdcc",internal/restapi/trips_for_route_handler_test.go,,1288-007,false
+1288,3751666614,inline,coderabbitai[bot],bot,false,false,false,false,"_🎯 Functional Correctness_ | _🟠 Major_ | _⚡ Quick win_
+
+**Make this regression test demonstrate the reported defect.**
+
+The supplied PR objective states that the previous `t.ID == """"` heuristic selects the same zero-value placeholder trips as `referencedTripIDs`. This fixture creates those placeholders. Therefore, this test can pass before the refactor and does not show that issue `#1287` is fixed.
+
+Add a case that fails with the previous implementation. Otherwise, remove or re-scope the behavior-neutral refactor.
+
+
+
+
+
+
+
+```shell
+#!/bin/bash
+set -euo pipefail
+
+git show HEAD^:internal/restapi/trips_for_route_handler.go |
+  rg -n -C 10 'buildTripReferences|t\.ID == """"|GetTripsByIDs'
+
+rg -n -C 8 'TestTripsForRouteHandler_BlockSequence_AdjacentTripReferences|blockSequenceFiles' \
+  internal/restapi/trips_for_route_handler_test.go
+```
+
+<details>
+<summary>🤖 Prompt for AI Agents</summary>
+
+```
+Verify each finding against current code. Fix only still-valid issues, skip the
+rest with a brief reason, keep changes minimal, and validate.
+
+In `@internal/restapi/trips_for_route_handler_test.go` around lines 1151 - 1197,
+Make TestTripsForRouteHandler_BlockSequence_AdjacentTripReferences exercise a
+referenced adjacent trip that is also represented by a non-empty fetched trip,
+so the prior t.ID == """" heuristic would select the zero-value placeholder and
+fail the assertions. Adjust the fixture or test setup to create this
+duplicate-ID case, while preserving validation that both adjacent references
+contain complete, distinct trip records; otherwise remove the behavior-neutral
+regression test.
+```
+
+</details>
+
+<!-- fingerprinting:phantom:poseidon:tapir -->
+
+<!-- cr-indicator-types:potential_issue -->
+
+<!-- cr-comment:v1:fb62e87330fce8c3c32f7fad -->
+
+<!-- This is an auto-generated reply by CodeRabbit -->",internal/restapi/trips_for_route_handler_test.go,,1288-008,false
+1288,3752949711,inline,coderabbitai[bot],bot,false,false,false,false,"`@3rabiii`, dismissed. The test is valid as a behavior-preserving regression test for this refactor. It does not need to fail against the previous implementation.
+
+🐇
+<!-- <review_comment_withdrawn> -->
+
+<sub>You are interacting with an AI system.</sub>
+
+<!-- This is an auto-generated reply by CodeRabbit -->",internal/restapi/trips_for_route_handler_test.go,,1288-010,false
+1288,4848320233,review_body,coderabbitai[bot],bot,false,false,false,false,"**Actionable comments posted: 2**
+
+<details>
+<summary>🤖 Prompt for all review comments with AI agents</summary>
+
+```
+Verify each finding against current code. Fix only still-valid issues, skip the
+rest with a brief reason, keep changes minimal, and validate.
+
+Inline comments:
+In `@internal/restapi/trips_for_route_handler_test.go`:
+- Around line 612-651: Extend
+TestTripsForRouteHandler_BlockSequence_AdjacentTripReferences with cases for an
+unprefetched static trip referenced by the entry TripId and by
+Status.ActiveTripID. For each case, invoke the handler and assert the
+corresponding references.trips record is present with populated RouteID,
+TripHeadsign, BlockID, and ServiceID fields, covering both missing-reference
+paths.
+
+In `@internal/restapi/trips_for_route_handler.go`:
+- Around line 559-561: Update buildTripReferences to return lookup errors from
+GetTripsByIDs instead of logging and producing incomplete references; propagate
+this error through both callers and respond with serverErrorResponse (500).
+Preserve sendNotFound only when errors.Is(err, sql.ErrNoRows), routing all other
+failures through the 500 path.
+```
+
+</details>
+
+<details>
+<summary>🪄 Autofix (Beta)</summary>
+
+Fix all unresolved CodeRabbit comments on this PR:
+
+- [ ] <!-- {""checkboxId"": ""4b0d0e0a-96d7-4f10-b296-3a18ea78f0b9""} --> Push a commit to this branch (recommended)
+- [ ] <!-- {""checkboxId"": ""ff5b1114-7d8c-49e6-8ac1-43f82af23a33""} --> Create a new PR with the fixes
+
+</details>
+
+---
+
+<details>
+<summary>ℹ️ Review info</summary>
+
+<details>
+<summary>⚙️ Run configuration</summary>
+
+**Configuration used**: Repository UI
+
+**Review profile**: ASSERTIVE
+
+**Plan**: Pro Plus
+
+**Run ID**: `799e5525-fd4f-4a1e-a164-093d5667db1d`
+
+</details>
+
+<details>
+<summary>📥 Commits</summary>
+
+Reviewing files that changed from the base of the PR and between 3b73fd9d1f0f25061b1bb591fb3616df57ebe202 and 2ffe5dd61aa82df859cab0fcc674faa3c553b238.
+
+</details>
+
+<details>
+<summary>📒 Files selected for processing (2)</summary>
+
+* `internal/restapi/trips_for_route_handler.go`
+* `internal/restapi/trips_for_route_handler_test.go`
+
+</details>
+
+</details>
+
+<!-- This is an auto-generated comment by CodeRabbit for review status -->",,,1288-012,false
+1288,4849168622,review_body,coderabbitai[bot],bot,false,false,false,false,"**Actionable comments posted: 1**
+
+<details>
+<summary>🤖 Prompt for all review comments with AI agents</summary>
+
+```
+Verify each finding against current code. Fix only still-valid issues, skip the
+rest with a brief reason, keep changes minimal, and validate.
+
+Inline comments:
+In `@internal/restapi/trips_for_route_handler_test.go`:
+- Around line 654-702: Add handler-level tests covering both error branches from
+buildTripReferences: make a referenced trip lookup return sql.ErrNoRows and
+assert tripsForRouteHandler responds with 404, then make another referenced
+lookup return a non-ErrNoRows error and assert it responds with 500. Reuse the
+existing handler/test fixture setup and verify the responses through the
+handler’s HTTP result, while preserving the successful reference-resolution
+test.
+```
+
+</details>
+
+<details>
+<summary>🪄 Autofix (Beta)</summary>
+
+Fix all unresolved CodeRabbit comments on this PR:
+
+- [ ] <!-- {""checkboxId"": ""4b0d0e0a-96d7-4f10-b296-3a18ea78f0b9""} --> Push a commit to this branch (recommended)
+- [ ] <!-- {""checkboxId"": ""ff5b1114-7d8c-49e6-8ac1-43f82af23a33""} --> Create a new PR with the fixes
+
+</details>
+
+---
+
+<details>
+<summary>ℹ️ Review info</summary>
+
+<details>
+<summary>⚙️ Run configuration</summary>
+
+**Configuration used**: Repository UI
+
+**Review profile**: ASSERTIVE
+
+**Plan**: Pro Plus
+
+**Run ID**: `f0db8e36-ffb6-4f01-8739-3b36443578e9`
+
+</details>
+
+<details>
+<summary>📥 Commits</summary>
+
+Reviewing files that changed from the base of the PR and between 2ffe5dd61aa82df859cab0fcc674faa3c553b238 and f802e7045e5769c1a02bed911ea9a353bd2cb7e6.
+
+</details>
+
+<details>
+<summary>📒 Files selected for processing (2)</summary>
+
+* `internal/restapi/trips_for_route_handler.go`
+* `internal/restapi/trips_for_route_handler_test.go`
+
+</details>
+
+</details>
+
+<!-- This is an auto-generated comment by CodeRabbit for review status -->",,,1288-013,false
+1288,4892804918,review_body,coderabbitai[bot],bot,false,false,false,false,"
+
+> [!CAUTION]
+> Some comments are outside the diff and can’t be posted inline due to platform limitations.
+> 
+> 
+> 
+> <details>
+> <summary>⚠️ Outside diff range comments (1)</summary><blockquote>
+> 
+> <details>
+> <summary>internal/restapi/trips_for_route_handler.go (1)</summary><blockquote>
+> 
+> `563-563`: _📐 Maintainability & Code Quality_ | _🔵 Trivial_ | _💤 Low value_
+> 
+> **Wrap the compound conditions.**
+> 
+> - `internal/restapi/trips_for_route_handler.go#L563-L563`: put each validity condition on a separate continuation line.
+> - `internal/restapi/trips_for_route_handler_test.go#L1192-L1193`: put each assertion condition on a separate continuation line.
+> 
+> As per coding guidelines, “Wrap long multi-clause boolean expressions.”
+> 
+> <details>
+> <summary>🤖 Prompt for AI Agents</summary>
+> 
+> ```
+> Verify each finding against current code. Fix only still-valid issues, skip the
+> rest with a brief reason, keep changes minimal, and validate.
+> 
+> In `@internal/restapi/trips_for_route_handler.go` at line 563, Wrap the compound
+> boolean expressions into continuation lines: in
+> internal/restapi/trips_for_route_handler.go lines 563-563, place each validity
+> condition in the bt route filter on its own line; in
+> internal/restapi/trips_for_route_handler_test.go lines 1192-1193, place each
+> assertion condition on its own continuation line. Preserve the existing logic
+> and conditions.
+> ```
+> 
+> </details>
+> 
+> <!-- cr-comment:v1:1b05f01c65fcb8c8b4a71301 -->
+> 
+> _Source: Coding guidelines_
+> 
+> </blockquote></details>
+> 
+> </blockquote></details>
+
+<details>
+<summary>🤖 Prompt for all review comments with AI agents</summary>
+
+```
+Verify each finding against current code. Fix only still-valid issues, skip the
+rest with a brief reason, keep changes minimal, and validate.
+
+Outside diff comments:
+In `@internal/restapi/trips_for_route_handler.go`:
+- Line 563: Wrap the compound boolean expressions into continuation lines: in
+internal/restapi/trips_for_route_handler.go lines 563-563, place each validity
+condition in the bt route filter on its own line; in
+internal/restapi/trips_for_route_handler_test.go lines 1192-1193, place each
+assertion condition on its own continuation line. Preserve the existing logic
+and conditions.
+```
+
+</details>
+
+---
+
+<details>
+<summary>ℹ️ Review info</summary>
+
+<details>
+<summary>⚙️ Run configuration</summary>
+
+**Configuration used**: Repository UI
+
+**Review profile**: ASSERTIVE
+
+**Plan**: Pro Plus
+
+**Run ID**: `8d2fa79c-abcf-4b30-9516-d068ae75b10b`
+
+</details>
+
+<details>
+<summary>📥 Commits</summary>
+
+Reviewing files that changed from the base of the PR and between f802e7045e5769c1a02bed911ea9a353bd2cb7e6 and 065d24be682c079707d21e5f8589c4e04a32651a.
+
+</details>
+
+<details>
+<summary>📒 Files selected for processing (2)</summary>
+
+* `internal/restapi/trips_for_route_handler.go`
+* `internal/restapi/trips_for_route_handler_test.go`
+
+</details>
+
+</details>
+
+<!-- This is an auto-generated comment by CodeRabbit for review status -->",,,1288-015,false
+1288,4899198542,review_body,coderabbitai[bot],bot,false,false,false,false,"**Actionable comments posted: 1**
+
+<details>
+<summary>🤖 Prompt for all review comments with AI agents</summary>
+
+```
+Verify each finding against current code. Fix only still-valid issues, skip the
+rest with a brief reason, keep changes minimal, and validate.
+
+Inline comments:
+In `@internal/restapi/trips_for_route_handler_test.go`:
+- Around line 1151-1197: Make
+TestTripsForRouteHandler_BlockSequence_AdjacentTripReferences exercise a
+referenced adjacent trip that is also represented by a non-empty fetched trip,
+so the prior t.ID == """" heuristic would select the zero-value placeholder and
+fail the assertions. Adjust the fixture or test setup to create this
+duplicate-ID case, while preserving validation that both adjacent references
+contain complete, distinct trip records; otherwise remove the behavior-neutral
+regression test.
+```
+
+</details>
+
+<details>
+<summary>🪄 Autofix</summary>
+
+Fix all unresolved CodeRabbit comments on this PR:
+
+- [ ] <!-- {""checkboxId"": ""4b0d0e0a-96d7-4f10-b296-3a18ea78f0b9""} --> Push a commit to this branch (recommended)
+- [ ] <!-- {""checkboxId"": ""ff5b1114-7d8c-49e6-8ac1-43f82af23a33""} --> Create a new PR with the fixes
+
+</details>
+
+---
+
+<details>
+<summary>ℹ️ Review info</summary>
+
+<details>
+<summary>⚙️ Run configuration</summary>
+
+**Configuration used**: Repository UI
+
+**Review profile**: ASSERTIVE
+
+**Plan**: Pro Plus
+
+**Run ID**: `5e980811-242c-4ae7-9754-ecabdcf1aa47`
+
+</details>
+
+<details>
+<summary>📥 Commits</summary>
+
+Reviewing files that changed from the base of the PR and between 065d24be682c079707d21e5f8589c4e04a32651a and eabd0ae04696c78902fe826f65163d20b10fecb7.
+
+</details>
+
+<details>
+<summary>📒 Files selected for processing (2)</summary>
+
+* `internal/restapi/trips_for_route_handler.go`
+* `internal/restapi/trips_for_route_handler_test.go`
+
+</details>
+
+</details>
+
+<!-- This is an auto-generated comment by CodeRabbit for review status -->",,,1288-016,false
+1288,4900520317,review_body,coderabbitai[bot],bot,false,false,false,true,,,,1288-018,false

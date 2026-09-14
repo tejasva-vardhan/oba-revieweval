@@ -1,0 +1,42 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1316,5296326453,issue,ARCoder181105,human,true,false,false,false,"All three addressed.
+
+- **stripNumericSuffix's doc comment** — restored to sit above the function it documents. resolveDuplicatedBaseTrip had landed between the comment and stripNumericSuffix with no blank line, so godoc was attributing it to the wrong function. (956578c)
+- **runsOn's doc comment** — now attributes the window to trips-for-route specifically, not ""the handlers."" (5d4f7a9)
+- **Duplicate service-ID queries** — collected the request's agency set once (skipping agencies with no resolvable timezone, since those trips are dropped before the block/resolver ever runs), fetch each agency's query-day and previous-day IDs once via serviceIDsForDays, and build its resolver up front. The block lookup reads the fetched IDs instead of querying again. (4825a28)
+
+That third change also closed a latent panic: the block lookup read AgencyLocations[agencyID] without checking the second return and passed the zero value into serviceDateMidnight, which calls time.Time.In(nil). Reachable when a route names an agency_id absent from agency.txt — arrived with main's #1329, not this PR, but the agency-set filter needed for the dedup closes it as a side effect.
+
+newServiceDateResolver keeps its signature, now implemented via serviceIDsForDays — #1317's candidate selection still calls it directly.
+
+On sequencing: confirmed the resolver is anchored on each agency's own midnight after the #1329 merge, not agencies[0]'s zone.
+
+#1286 overlaps only the trips-for-route half of this PR — it adds a tripServiceDay map local to that handler, where this PR adds a resolver both handlers share. Leaving the call on that to you.",,,1316-004,false
+1316,5328087383,issue,ARCoder181105,human,true,false,false,false,"Thanks for the review.
+
+**newServiceDateResolver** — correct that it has no caller in this PR's own diff. Kept deliberately: #1317, stacked on top of this branch, calls it directly for candidate selection (`trips_for_location_handler.go:50`), since that path needs a resolver in the query's own timezone before any trip's agency is known. Deleting it here would break #1317 on rebase. Noted in the commit message (f897a5b) for exactly this reason — happy to remove it once #1317 lands and either takes over the caller or gets its own copy.
+
+**DUPLICATED run precision** — agreed, noted as a known Java-parity gap, not blocking.",,,1316-005,false
+1316,5350251699,issue,ARCoder181105,human,true,false,false,false,"Deleted in 0da8388 — you're right, and the ""#1317 will need it"" argument doesn't justify landing dead code in main. #1317 now inlines the two lines at its own call site instead of reintroducing the helper, so nothing is waiting on it.
+
+Also reworded newServiceDateResolverFor's doc comment, which read as a contrast against the constructor that's now gone.
+
+grep -rn ""newServiceDateResolver\b"" comes back empty. CI green.
+
+Noted on both non-blocking items.",,,1316-008,false
+1316,3750737256,inline,ARCoder181105,human,true,false,false,false,"Fixed in the owning PR (#1314) — the doc comment now starts with GetTripIDsForStops, written in query.sql and regenerated via make models rather than edited in the generated output.",gtfsdb/query.sql,,1316-019,false
+1316,3750743187,inline,ARCoder181105,human,true,false,false,false,"Fixed in 660c728. The configurability request is already tracked in #800, so the comment points there instead of reading as a bare TODO. Values and behaviour unchanged.",internal/restapi/trips_helper.go,,1316-021,false
+1316,3750744864,inline,ARCoder181105,human,true,false,false,false,"Not valid — the method is still used by trips_for_location_handler.go:463. Only trips-for-route switched to newServiceDateResolverFor, because it is the one handler that already holds the day's service IDs. trips-for-location has no such slices and still needs the loading constructor.",internal/restapi/trips_helper.go,,1316-022,false
+1316,3750748570,inline,ARCoder181105,human,true,false,false,false,"Deliberate, not an oversight. One reference per stop with the first referring ID winning was reviewed and accepted on #1314, where the limitation is stated in the PR body. Emitting two references for one bare stop ID changes the response shape, so it belongs in its own change rather than here.",internal/restapi/trips_for_location_handler.go,,1316-024,false
+1316,3750751121,inline,ARCoder181105,human,true,false,false,false,"Real bug, but pre-existing — this PR only added the adjacent serviceDates.Resolve line, it did not touch the fallback. Assigning baseTripID before the stripped lookup succeeds does leave a nonexistent ID flowing into buildScheduleForTrip and BuildTripStatus. Worth its own issue rather than widening a serviceDate PR.",internal/restapi/trips_for_route_handler.go,,1316-025,false
+1316,3751269320,inline,ARCoder181105,human,true,false,false,false,"Fixed in a68221b. The stripped ID is now adopted only once it resolves, so a trip whose suffixed and stripped forms both miss keeps the ID the feed sent rather than passing a nonexistent one to buildScheduleForTrip and BuildTripStatus. A stripped lookup failing for anything other than sql.ErrNoRows is logged, matching the first lookup.
+
+Pulled the resolution into resolveDuplicatedBaseTrip so it can be tested — the entry loop needs GetDuplicatedVehiclesForRoute to return something and there is no vehicle-seeding helper. TestResolveDuplicatedBaseTrip covers all four outcomes, including the regression case.",internal/restapi/trips_for_route_handler.go,,1316-029,false
+1316,3803969118,inline,ARCoder181105,human,true,false,false,false,Used in 1317,internal/restapi/trips_helper.go,,1316-033,false
+1316,4898176547,review_body,ARCoder181105,human,true,false,false,true,,,,1316-036,false
+1316,4898184732,review_body,ARCoder181105,human,true,false,false,true,,,,1316-038,false
+1316,4898187094,review_body,ARCoder181105,human,true,false,false,true,,,,1316-039,false
+1316,4898192234,review_body,ARCoder181105,human,true,false,false,true,,,,1316-041,false
+1316,4898194970,review_body,ARCoder181105,human,true,false,false,true,,,,1316-042,false
+1316,4898757190,review_body,ARCoder181105,human,true,false,false,true,,,,1316-046,false
+1316,4960915495,review_body,ARCoder181105,human,true,false,false,true,,,,1316-053,false

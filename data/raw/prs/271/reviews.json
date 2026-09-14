@@ -1,0 +1,10 @@
+[
+  {
+    "id": 3736623463,
+    "login": "aaronbrethorst",
+    "user_type": "User",
+    "state": "APPROVED",
+    "body": "Hey Adel, sharp eye catching this race condition! The debug handler was indeed violating the `GetStaticData()` contract which clearly states \"Caller must hold manager.RLock() before calling this method.\"\n",
+    "submitted_at": "2026-02-01T20:46:15Z"
+  }
+]

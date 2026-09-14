@@ -1,0 +1,44 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1407,5453374528,issue,ARCoder181105,human,true,false,false,false,"Addressed both review points in f32e903. Quality gate is now green (0 issues).
+
+**Cognitive complexity** — four functions were over the threshold of 15. Split each into its distinct sub-tasks:
+
+| Function | Was | Extracted |
+|---|---|---|
+| `activeStopTimesForWindow` | 21 | `stopTimesForServiceDay` |
+| `appendStopReferences` | 18 | `loadStopReferenceData`, `collectStopRoutes` |
+| `buildArrival` | 17 | `combinedVehicleID`, `tripStatusForArrival` |
+| `batchArrivalEntities` | 16 | `uniqueRouteAndTripIDs`, `tripStopCounts` |
+
+One thing to be careful of if you review that extraction: the per-day loop has two different failure modes. Failing to resolve a day's active services is fatal on day 0 but tolerable on ±1, while failing to read that day's `stop_times` is tolerable on *every* day. Collapsing those into a single error return would have made a day-0 stop-times failure fatal. `stopTimesForServiceDay` keeps them separate.
+
+**`GetStopsByIDs` error** — agreed, fixed. It was setting the result to nil and continuing, which dropped every stop reference and still answered 200, so the entry named stops the client had no way to resolve. It now returns the error and the handler surfaces a 500. `GetRoutesForStops` keeps its warn-and-continue, since losing it only costs each stop its `routeIds`.
+
+Note that this second fix does make the PR no longer *strictly* behaviour-preserving — it only fires on a DB failure, so the suite still passes with no test changes, but the description's ""no behavior change"" is slightly overstated now. Happy to reword it if you'd prefer.
+",,,1407-002,false
+1407,5467058041,issue,ARCoder181105,human,true,false,false,false,"Both blockers fixed, branch is up to date with `main`.
+
+Commits: `a412b6e` merge, `09d1771` frequency, `9066093` the 500, `3f97961` comment.
+
+Merged `main` rather than rebasing — CONTRIBUTING says not to rewrite reviewed history. Say the word if you want a rebase instead.
+
+**1. Frequency — fixed.** Re-ported into `arrivals_core.go`: `batchArrivalEntities` returns `freqMap` via `fetchFrequenciesForTrips` (fatal on error), `tripStatusForArrival` passes it as `BuildTripStatus`'s 6th arg, and a new `applyFrequency` sets `arrival.Frequency` (guarded, since `selectFrequency` panics on an empty slice). `TestArrivalsAndDeparturesWithFrequency` passes unedited — no test file in this PR is modified. #1408 gets frequency for free via the shared core.
+
+**2. `GetStopsByIDs` 500 — reverted** to warn-and-continue. Note that 500 came from CodeRabbit's review earlier in this PR, so the two reviews pulled opposite ways. Yours wins.
+
+**3 & 4. `RouteTypes` / `stopAgencies` — not dead.** Both are consumed by #1408, which stacks on this branch: `arrivals_and_departures_for_location_handler.go:212` and `:163`. Standalone they do look unreachable. I'll strip them and move them to #1408 if you prefer this PR self-contained.
+
+**5. Reference helpers — I don't think these are safe swaps:**
+
+- `buildRouteModels` labels routes with its `agencyID` *parameter*; `appendRouteReferences` uses each route's own `route.AgencyID`. Multi-agency feeds diverge on `id`, `agencyId`, and `nullSafeShortName`.
+- `routeReferencesForStops` returns `utils.MapValues(...)` — map order. That would make each stop's `routeIds` non-deterministic.
+- `routeReferenceFromStopRow` returns `models.Route`; `collectStopRoutes` needs a `gtfsdb.Route` for the accumulator.
+
+Same call as the `buildStopModel` note in the description. If `buildRouteModels`' agency semantics are intended, that's a separate bug worth fixing.
+
+**6. Singular handler duplication — agreed**, separate PR.
+
+**7. `alertAgencyID` — comment fixed.** The field is read only by the single-stop handler (`arrivals_and_departures_for_stop_handler.go:172`); #1408 passes a per-stop `agencyID` to `situations.add` directly (`:219`), so the mixup can't happen. The comment claimed multi-stop use — reworded.
+
+`go vet` (both tags), `make test`, `go fmt` clean. No conflicts with `main`.
+",,,1407-004,false

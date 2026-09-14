@@ -1,0 +1,18 @@
+[
+  {
+    "filename": "internal/restapi/trips_for_location_handler.go",
+    "status": "modified",
+    "additions": 72,
+    "deletions": 44,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_for_location_handler_test.go",
+    "status": "modified",
+    "additions": 103,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  }
+]

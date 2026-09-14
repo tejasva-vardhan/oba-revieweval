@@ -1,0 +1,120 @@
+diff --git a/internal/restapi/trip_for_vehicle_handler.go b/internal/restapi/trip_for_vehicle_handler.go
+index 38224396..277b4ab3 100644
+--- a/internal/restapi/trip_for_vehicle_handler.go
++++ b/internal/restapi/trip_for_vehicle_handler.go
+@@ -1,12 +1,14 @@
+ package restapi
+ 
+ import (
++	"context"
+ 	"database/sql"
+ 	"errors"
+ 	"net/http"
+ 	"strconv"
+ 	"time"
+ 
++	"maglev.onebusaway.org/gtfsdb"
+ 	"maglev.onebusaway.org/internal/models"
+ 	"maglev.onebusaway.org/internal/utils"
+ )
+@@ -125,23 +127,35 @@ func (api *RestAPI) tripForVehicleHandler(w http.ResponseWriter, r *http.Request
+ 		SituationIDs: situationIDs,
+ 	}
+ 
+-	// Build references
+ 	references := models.NewEmptyReferences()
++	// When includeReferences=false the references block is present but empty.
++	if ShouldIncludeReferences(r) {
++		references, err = api.buildTripForVehicleReferences(ctx, agencyID, agency, trip, status, schedule, params.IncludeTrip)
++		if err != nil {
++			api.serverErrorResponse(w, r, err)
++			return
++		}
++	}
++
++	response := models.NewEntryResponse(entry, *references, api.Clock)
++	api.sendResponse(w, r, response)
++}
+ 
+-	agencyModel := models.AgencyReferenceFromDatabase(&agency)
++// buildTripForVehicleReferences dereferences the IDs the entry exposes: the
++// agency, the stops named by the status and schedule blocks, the routes serving
++// those stops, and â€” when includeTrip is set â€” the scheduled trip record.
++func (api *RestAPI) buildTripForVehicleReferences(ctx context.Context, agencyID string, agency gtfsdb.Agency, trip gtfsdb.Trip, status *models.TripStatus, schedule *models.Schedule, includeTrip bool) (*models.ReferencesModel, error) {
++	references := models.NewEmptyReferences()
+ 
+ 	stopIDs, err := referencedStopIDs(status, schedule)
+ 	if err != nil {
+-		api.serverErrorResponse(w, r, err)
+-		return
++		return nil, err
+ 	}
+ 
+ 	stops, uniqueRouteMap, err := BuildStopReferencesAndRouteIDsForStops(api, ctx, agencyID, stopIDs)
+ 	if err != nil {
+-		api.serverErrorResponse(w, r, err)
+-		return
++		return nil, err
+ 	}
+-
+ 	references.Stops = stops
+ 
+ 	routeRefs := make(map[string]models.Route, len(uniqueRouteMap))
+@@ -159,9 +173,9 @@ func (api *RestAPI) tripForVehicleHandler(w http.ResponseWriter, r *http.Request
+ 	}
+ 	references.Routes = utils.MapValues(routeRefs)
+ 
+-	references.Agencies = append(references.Agencies, agencyModel)
++	references.Agencies = append(references.Agencies, models.AgencyReferenceFromDatabase(&agency))
+ 
+-	if params.IncludeTrip {
++	if includeTrip {
+ 		tripRef := models.NewTripReference(
+ 			utils.FormCombinedID(agencyID, trip.ID),
+ 			utils.FormCombinedID(agencyID, trip.RouteID),
+@@ -175,8 +189,7 @@ func (api *RestAPI) tripForVehicleHandler(w http.ResponseWriter, r *http.Request
+ 		references.Trips = append(references.Trips, *tripRef)
+ 	}
+ 
+-	response := models.NewEntryResponse(entry, *references, api.Clock)
+-	api.sendResponse(w, r, response)
++	return references, nil
+ }
+ 
+ // referencedStopIDs returns the bare stop IDs that the entry refers to and so
+diff --git a/internal/restapi/trip_for_vehicle_handler_test.go b/internal/restapi/trip_for_vehicle_handler_test.go
+index adaf4899..dda53490 100644
+--- a/internal/restapi/trip_for_vehicle_handler_test.go
++++ b/internal/restapi/trip_for_vehicle_handler_test.go
+@@ -189,6 +189,31 @@ func TestTripForVehicleHandler_IncludeToggles(t *testing.T) {
+ 		}
+ 	})
+ 
++	t.Run("includeReferences=false empties the references block", func(t *testing.T) {
++		resp, model := callAPIHandler[TripDetailsResponse](t, api,
++			tripForVehicleURL(vehicleID, url.Values{"includeReferences": {"false"}}))
++
++		require.Equal(t, http.StatusOK, resp.StatusCode)
++		require.NotEmpty(t, model.Data.Entry.TripID, "the entry must still be populated")
++
++		// Every collection must serialize as [] rather than null: the block stays
++		// present and merely empty, so a nil slice here would be a wire-format
++		// regression rather than a reference the handler chose not to populate.
++		refs := model.Data.References
++		emptyCollections := map[string]any{
++			"agencies":   refs.Agencies,
++			"routes":     refs.Routes,
++			"trips":      refs.Trips,
++			"stops":      refs.Stops,
++			"situations": refs.Situations,
++			"stopTimes":  refs.StopTimes,
++		}
++		for name, collection := range emptyCollections {
++			assert.NotNil(t, collection, "%s must be present when includeReferences=false", name)
++			assert.Empty(t, collection, "%s must be empty when includeReferences=false", name)
++		}
++	})
++
+ 	t.Run("all-false strips schedule/status/trip refs", func(t *testing.T) {
+ 		_, model := callAPIHandler[TripDetailsResponse](t, api,
+ 			tripForVehicleURL(vehicleID, url.Values{

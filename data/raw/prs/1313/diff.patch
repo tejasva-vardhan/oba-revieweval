@@ -1,0 +1,1729 @@
+diff --git a/internal/restapi/arrival_and_departure_for_stop_handler.go b/internal/restapi/arrival_and_departure_for_stop_handler.go
+index cb46afb3..87e0a53e 100644
+--- a/internal/restapi/arrival_and_departure_for_stop_handler.go
++++ b/internal/restapi/arrival_and_departure_for_stop_handler.go
+@@ -357,7 +357,7 @@ func (api *RestAPI) arrivalAndDepartureForStopHandler(w http.ResponseWriter, r *
+ 	// carry a wall-clock time portion) for all schedule math â€” matches Java's
+ 	// BlockInstance contract ("midnight time relative to stop times"; see
+ 	// BlockInstance.java:69-72) and the plural handler's convention.
+-	status, snapshot, statusErr := api.BuildTripStatus(ctx, route.AgencyID, tripID, nil, serviceMidnight, currentTime)
++	status, statusExtras, statusErr := api.BuildTripStatus(ctx, route.AgencyID, tripID, nil, serviceMidnight, currentTime)
+ 	if statusErr != nil {
+ 		api.Logger.Warn("BuildTripStatus failed",
+ 			"tripID", tripID, "error", statusErr)
+@@ -385,8 +385,8 @@ func (api *RestAPI) arrivalAndDepartureForStopHandler(w http.ResponseWriter, r *
+ 		// Reuse the snapshot BuildTripStatus already computed for this trip.
+ 		// It applies the same schedule-deviation shift internally, so
+ 		// recomputing here just to run metricsForStop was duplicating work.
+-		if snapshot != nil {
+-			if d, n, ok := snapshot.metricsForStop(tripID, int(targetStopTime.StopSequence)); ok {
++		if statusExtras.snapshot != nil {
++			if d, n, ok := statusExtras.snapshot.metricsForStop(tripID, int(targetStopTime.StopSequence)); ok {
+ 				distanceFromStop = d
+ 				numberOfStopsAway = n
+ 			}
+@@ -398,7 +398,7 @@ func (api *RestAPI) arrivalAndDepartureForStopHandler(w http.ResponseWriter, r *
+ 	blockTripSequence := api.calculateBlockTripSequence(ctx, tripID, serviceMidnight)
+ 
+ 	lastUpdateTime := api.GtfsManager.GetVehicleLastUpdateTime(vehicle)
+-	situationIDs := api.GetSituationIDsForTrip(r.Context(), tripID)
++	situationIDs, situationRefs := api.situationsFromRefs(statusExtras.situations)
+ 
+ 	arrival := models.NewArrivalAndDeparture(
+ 		utils.FormCombinedID(route.AgencyID, route.ID), // routeID
+@@ -595,13 +595,7 @@ func (api *RestAPI) arrivalAndDepartureForStopHandler(w http.ResponseWriter, r *
+ 	}
+ 	references.Routes = utils.MapValues(routeRefs)
+ 
+-	if len(situationIDs) > 0 {
+-		alerts := api.GtfsManager.GetAlertsForTrip(r.Context(), tripID)
+-		if len(alerts) > 0 {
+-			situations := api.BuildSituationReferences(alerts)
+-			references.Situations = append(references.Situations, situations...)
+-		}
+-	}
++	references.Situations = append(references.Situations, situationRefs...)
+ 
+ 	response := models.NewEntryResponse(arrival, *references, api.Clock)
+ 	api.sendResponse(w, r, response)
+diff --git a/internal/restapi/arrivals_and_departures_for_stop_handler.go b/internal/restapi/arrivals_and_departures_for_stop_handler.go
+index 337d5e08..84b1ec64 100644
+--- a/internal/restapi/arrivals_and_departures_for_stop_handler.go
++++ b/internal/restapi/arrivals_and_departures_for_stop_handler.go
+@@ -10,7 +10,6 @@ import (
+ 	"strconv"
+ 	"time"
+ 
+-	"github.com/OneBusAway/go-gtfs"
+ 	"maglev.onebusaway.org/gtfsdb"
+ 	internalgtfs "maglev.onebusaway.org/internal/gtfs"
+ 	"maglev.onebusaway.org/internal/models"
+@@ -144,7 +143,7 @@ func (api *RestAPI) arrivalsAndDeparturesForStopHandler(w http.ResponseWriter, r
+ 	addedAgencyIDs := make(map[string]bool)
+ 	addedAgencyIDs[agency.ID] = true
+ 
+-	collectedAlerts := make(map[string]gtfs.Alert)
++	situations := newSituationCollector()
+ 	alertAgencyID := stopAgencyID
+ 
+ 	type activeStopTime struct {
+@@ -366,7 +365,7 @@ func (api *RestAPI) arrivalsAndDeparturesForStopHandler(w http.ResponseWriter, r
+ 
+ 		// Always built â€” Java attaches a BlockLocation (real-time or scheduled) to
+ 		// every arrival, so tripStatus is always non-null.
+-		status, snapshot, statusErr := api.BuildTripStatus(ctx, route.AgencyID, st.TripID, nil, serviceMidnight, params.Time)
++		status, statusExtras, statusErr := api.BuildTripStatus(ctx, route.AgencyID, st.TripID, nil, serviceMidnight, params.Time)
+ 		if statusErr != nil {
+ 			api.Logger.Warn("BuildTripStatus failed for arrival",
+ 				"tripID", st.TripID, "error", statusErr)
+@@ -392,8 +391,8 @@ func (api *RestAPI) arrivalsAndDeparturesForStopHandler(w http.ResponseWriter, r
+ 			// so recomputing here just to run metricsForStop was doubling every
+ 			// per-arrival snapshot cost â€” a real problem on the plural handler
+ 			// where minutesBefore/minutesAfter can be 24h in each direction.
+-			if snapshot != nil {
+-				if d, n, ok := snapshot.metricsForStop(st.TripID, int(st.StopSequence)); ok {
++			if statusExtras.snapshot != nil {
++				if d, n, ok := statusExtras.snapshot.metricsForStop(st.TripID, int(st.StopSequence)); ok {
+ 					distanceFromStop = d
+ 					numberOfStopsAway = n
+ 				}
+@@ -444,17 +443,7 @@ func (api *RestAPI) arrivalsAndDeparturesForStopHandler(w http.ResponseWriter, r
+ 		lastUpdateTime := api.GtfsManager.GetVehicleLastUpdateTime(vehicle)
+ 
+ 		tripAlerts := api.GtfsManager.GetAlertsForTrip(r.Context(), st.TripID)
+-		situationIDs := make([]string, 0, len(tripAlerts))
+-		for _, alert := range tripAlerts {
+-			if alert.ID == "" {
+-				continue
+-			}
+-
+-			situationIDs = append(situationIDs, utils.FormCombinedID(route.AgencyID, alert.ID))
+-			if _, seen := collectedAlerts[alert.ID]; !seen {
+-				collectedAlerts[alert.ID] = alert
+-			}
+-		}
++		situationIDs := situations.add(tripAlerts, route.AgencyID)
+ 
+ 		if alertAgencyID == "" && route.AgencyID != "" {
+ 			alertAgencyID = route.AgencyID
+@@ -629,30 +618,15 @@ func (api *RestAPI) arrivalsAndDeparturesForStopHandler(w http.ResponseWriter, r
+ 		}
+ 	}
+ 
+-	for _, alert := range api.GtfsManager.GetAlertsForStop(stopCode) {
+-		if alert.ID != "" {
+-			if _, seen := collectedAlerts[alert.ID]; !seen {
+-				collectedAlerts[alert.ID] = alert
+-			}
+-		}
+-	}
++	situations.add(api.GtfsManager.GetAlertsForStop(stopCode), alertAgencyID)
+ 
+-	if len(collectedAlerts) > 0 {
+-		alertSlice := make([]gtfs.Alert, 0, len(collectedAlerts))
+-		for _, a := range collectedAlerts {
+-			alertSlice = append(alertSlice, a)
+-		}
+-		situations := api.BuildSituationReferences(alertSlice)
+-		references.Situations = append(references.Situations, situations...)
+-	}
++	references.Situations = append(references.Situations, api.situationReferences(situations.refs)...)
+ 
+-	topLevelSituationIDSet := make(map[string]struct{}, len(collectedAlerts))
+-	for alertID := range collectedAlerts {
+-		topLevelSituationIDSet[utils.FormCombinedID(alertAgencyID, alertID)] = struct{}{}
+-	}
+-	topLevelSituationIDs := make([]string, 0, len(topLevelSituationIDSet))
+-	for id := range topLevelSituationIDSet {
+-		topLevelSituationIDs = append(topLevelSituationIDs, id)
++	// The top-level list covers every alert reachable from this stop, whether it
++	// was matched through an arrival's trip or through the stop itself.
++	topLevelSituationIDs := make([]string, 0, len(situations.refs))
++	for _, ref := range situations.refs {
++		topLevelSituationIDs = append(topLevelSituationIDs, ref.ID)
+ 	}
+ 
+ 	nearbyStopIDs := getNearbyStopIDs(api, ctx, stop.Lat, stop.Lon, stopCode, stopAgencyID)
+diff --git a/internal/restapi/reference_utils.go b/internal/restapi/reference_utils.go
+index 3607f19b..43b22a4c 100644
+--- a/internal/restapi/reference_utils.go
++++ b/internal/restapi/reference_utils.go
+@@ -2,12 +2,15 @@ package restapi
+ 
+ import (
+ 	"context"
++	"fmt"
+ 	"net/http"
+ 	"strconv"
++	"strings"
+ 	"time"
+ 
+ 	"github.com/OneBusAway/go-gtfs"
+ 	"maglev.onebusaway.org/gtfsdb"
++	"maglev.onebusaway.org/internal/logging"
+ 	"maglev.onebusaway.org/internal/models"
+ 	"maglev.onebusaway.org/internal/nulls"
+ 	"maglev.onebusaway.org/internal/utils"
+@@ -448,3 +451,167 @@ func (api *RestAPI) buildStopModel(ctx context.Context, agencyID string, stop gt
+ 		StaticRouteIDs:     combinedRouteIDs,
+ 	}
+ }
++
++// Situation references
++//
++// An entry's situationIds and the response's references.situations must use the
++// same ID, or the IDs resolve to nothing. Everything that derives one derives
++// the other, so the two cannot drift apart.
++// situationRef pairs an alert with the situation ID that both list entries and
++// situation references use to refer to it.
++type situationRef struct {
++	ID    string
++	Alert gtfs.Alert
++}
++
++// situationRefsFromAlerts drops alerts with no ID and pairs the rest with the
++// situation ID used to refer to them.
++func situationRefsFromAlerts(alerts []gtfs.Alert, agencyID string) []situationRef {
++	refs := make([]situationRef, 0, len(alerts))
++	for _, alert := range alerts {
++		if alert.ID == "" {
++			continue
++		}
++		refs = append(refs, situationRef{ID: situationID(alert.ID, agencyIDForAlert(alert, agencyID)), Alert: alert})
++	}
++	return refs
++}
++
++// agencyIDForAlert returns the agency whose prefix an alert's situation ID
++// carries, preferring the alert's own informed entity over the caller's agency.
++//
++// One alert is reachable by more than one path: a stop served by another
++// agency's route matches the same alert through both the route and the stop, and
++// each path knows a different agency. Scoping the ID to the caller's agency
++// would then publish that alert twice under two IDs, and an entry's
++// situationIds would resolve to whichever one it happened to be built from.
++// The informed entity is the only source that does not vary by lookup path.
++func agencyIDForAlert(alert gtfs.Alert, fallbackAgencyID string) string {
++	for _, entity := range alert.InformedEntities {
++		if entity.AgencyID != nil && *entity.AgencyID != "" {
++			return *entity.AgencyID
++		}
++	}
++	return fallbackAgencyID
++}
++
++// situationID returns the combined-form ID for an alert.
++//
++// Prefixing is idempotent, not unconditional: a GTFS-RT feed exported by an OBA
++// instance already carries the agency prefix on its alert IDs â€” Puget Sound
++// ships "1_92239" â€” and prefixing again would publish "1_1_92239", which
++// resolves against nothing a client has seen. Upstream reports "1_92239".
++func situationID(alertID, agencyID string) string {
++	if agencyID == "" || strings.HasPrefix(alertID, agencyID+"_") {
++		return alertID
++	}
++	return utils.FormCombinedID(agencyID, alertID)
++}
++
++// situationCollector deduplicates the alerts referenced by list entries so the
++// response emits one situation reference per distinct situation ID.
++type situationCollector struct {
++	seen map[string]struct{}
++	refs []situationRef
++}
++
++func newSituationCollector() *situationCollector {
++	return &situationCollector{seen: make(map[string]struct{})}
++}
++
++// add records the alerts affecting one trip and returns their situation IDs.
++func (c *situationCollector) add(alerts []gtfs.Alert, agencyID string) []string {
++	return c.addRefs(situationRefsFromAlerts(alerts, agencyID))
++}
++
++// addRefs records already-resolved situation references and returns their IDs.
++func (c *situationCollector) addRefs(refs []situationRef) []string {
++	ids := make([]string, 0, len(refs))
++	for _, ref := range refs {
++		ids = append(ids, ref.ID)
++		if _, ok := c.seen[ref.ID]; ok {
++			continue
++		}
++		c.seen[ref.ID] = struct{}{}
++		c.refs = append(c.refs, ref)
++	}
++	return ids
++}
++
++// situationReferences converts collected alerts into situation references,
++// stamping the same IDs the list entries use. BuildSituationReferences emits raw
++// alert IDs and preserves input order one-for-one.
++func (api *RestAPI) situationReferences(refs []situationRef) []models.Situation {
++	if len(refs) == 0 {
++		return []models.Situation{}
++	}
++
++	alerts := make([]gtfs.Alert, 0, len(refs))
++	for _, ref := range refs {
++		alerts = append(alerts, ref.Alert)
++	}
++
++	situations := api.BuildSituationReferences(alerts)
++	if len(situations) != len(refs) {
++		// The ID stamping below pairs by position, so a length change in
++		// BuildSituationReferences would silently mislabel every situation.
++		logging.LogError(api.Logger, "situation reference count does not match the alerts it was built from",
++			fmt.Errorf("built %d situations from %d alerts", len(situations), len(refs)))
++		return situations
++	}
++
++	for i := range situations {
++		situations[i].ID = refs[i].ID
++	}
++	return situations
++}
++
++func (rb *referenceBuilder) getAgenciesList() []models.AgencyReference {
++	agencies := make([]models.AgencyReference, 0, len(rb.presentAgencies))
++	for _, agency := range rb.presentAgencies {
++		agencies = append(agencies, agency)
++	}
++	return agencies
++}
++
++func (rb *referenceBuilder) getRoutesList() []models.Route {
++	routes := make([]models.Route, 0, len(rb.presentRoutes))
++	for _, route := range rb.presentRoutes {
++		if route.ID != "" {
++			routes = append(routes, route)
++		}
++	}
++	return routes
++}
++
++// situationIDsFromRefs returns the situation IDs of already-resolved references,
++// so entry IDs are always derived the same way the references are.
++func situationIDsFromRefs(refs []situationRef) []string {
++	ids := make([]string, 0, len(refs))
++	for _, ref := range refs {
++		ids = append(ids, ref.ID)
++	}
++	return ids
++}
++
++// TripSituations returns a trip's situation IDs together with the matching
++// situation references, so an entry's situationIds always resolve.
++func (api *RestAPI) TripSituations(ctx context.Context, tripID string) ([]string, []models.Situation) {
++	return api.situationsFromRefs(api.situationRefsForTrip(ctx, tripID))
++}
++
++// situationsFromRefs splits already-resolved references into the entry IDs and
++// the reference block built from the same lookup.
++func (api *RestAPI) situationsFromRefs(refs []situationRef) ([]string, []models.Situation) {
++	return situationIDsFromRefs(refs), api.situationReferences(refs)
++}
++
++// tripSituationsFor returns a trip's situations, reusing the references
++// BuildTripStatus already resolved for the same trip rather than querying for
++// them a second time. Extras is nil when the caller skipped the status.
++func (api *RestAPI) tripSituationsFor(ctx context.Context, tripID string, extras *tripStatusExtras) ([]string, []models.Situation) {
++	if extras == nil {
++		return api.TripSituations(ctx, tripID)
++	}
++	return api.situationsFromRefs(extras.situations)
++}
+diff --git a/internal/restapi/situation_references_test.go b/internal/restapi/situation_references_test.go
+new file mode 100644
+index 00000000..ad3308f2
+--- /dev/null
++++ b/internal/restapi/situation_references_test.go
+@@ -0,0 +1,331 @@
++package restapi
++
++import (
++	"context"
++	"fmt"
++	"net/http"
++	"testing"
++	"time"
++
++	gogtfs "github.com/OneBusAway/go-gtfs"
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++	"maglev.onebusaway.org/gtfsdb"
++	"maglev.onebusaway.org/internal/clock"
++)
++
++// collectSituationIDs walks a decoded response and returns every situationIds
++// value found anywhere in it, so one assertion covers entries, nested statuses
++// and top-level lists alike.
++func collectSituationIDs(node any, found *[]string) {
++	switch typed := node.(type) {
++	case map[string]any:
++		for key, value := range typed {
++			if key == "situationIds" {
++				if ids, ok := value.([]any); ok {
++					for _, id := range ids {
++						if s, ok := id.(string); ok {
++							*found = append(*found, s)
++						}
++					}
++				}
++				continue
++			}
++			collectSituationIDs(value, found)
++		}
++	case []any:
++		for _, item := range typed {
++			collectSituationIDs(item, found)
++		}
++	}
++}
++
++func referencedSituationIDs(t *testing.T, body map[string]any) map[string]bool {
++	t.Helper()
++
++	data, _ := body["data"].(map[string]any)
++	references, _ := data["references"].(map[string]any)
++	situations, _ := references["situations"].([]any)
++
++	ids := make(map[string]bool, len(situations))
++	for _, situation := range situations {
++		entry, ok := situation.(map[string]any)
++		if !ok {
++			continue
++		}
++		if id, ok := entry["id"].(string); ok {
++			ids[id] = true
++		}
++	}
++	return ids
++}
++
++// TestSituationIDsResolveToReferences covers every endpoint that emits
++// situationIds: each ID must resolve to an entry in references.situations, or
++// clients are left holding a dangling pointer.
++func TestSituationIDsResolveToReferences(t *testing.T) {
++	api, cleanup := createTestApiWithRealTimeData(t, clock.RealClock{})
++	defer cleanup()
++
++	// createTestApiWithRealTimeData returns before the first feed poll lands, and
++	// anyRealTimeVehicleID needs a vehicle to pick from.
++	require.Eventually(t, func() bool {
++		return len(api.GtfsManager.GetRealTimeVehicles()) > 0
++	}, 10*time.Second, 20*time.Millisecond, "real-time vehicles never loaded")
++
++	// Agency-scoped so it matches whichever trips and stops each endpoint returns.
++	rawAgencyID := "25"
++	api.GtfsManager.AddAlertForTest(gogtfs.Alert{
++		ID:               "situation-resolution-alert",
++		InformedEntities: []gogtfs.AlertInformedEntity{{AgencyID: &rawAgencyID}},
++		Header:           []gogtfs.AlertText{{Text: "Test Agency Alert", Language: "en"}},
++	})
++	const seededSituationID = "25_situation-resolution-alert"
++
++	tripID, stopID := anyTripAndStop(t, api)
++	vehicleID := anyRealTimeVehicleID(t, api)
++
++	// Pinned to a weekday inside the RABA fixture's calendar range, which ended in
++	// 2025; under the real clock the stop has no arrivals and the cases keyed off
++	// it would assert nothing.
++	serviceTime := time.Date(2025, 6, 12, 19, 0, 0, 0, time.UTC)
++	// The handler reads serviceDate in the agency's timezone, so midnight has to
++	// be that day's local midnight â€” UTC midnight lands on the 11th in Pacific.
++	agencyLocation, err := time.LoadLocation("America/Los_Angeles")
++	require.NoError(t, err)
++	localServiceTime := serviceTime.In(agencyLocation)
++	serviceDate := time.Date(localServiceTime.Year(), localServiceTime.Month(), localServiceTime.Day(),
++		0, 0, 0, 0, agencyLocation)
++
++	tests := []struct {
++		name string
++		url  string
++	}{
++		{
++			name: "trip-details",
++			url:  fmt.Sprintf("/api/where/trip-details/25_%s.json?key=TEST&includeStatus=true", tripID),
++		},
++		{
++			name: "arrivals-and-departures-for-stop",
++			url: fmt.Sprintf("/api/where/arrivals-and-departures-for-stop/25_%s.json?key=TEST&time=%d&minutesAfter=240",
++				stopID, serviceTime.UnixMilli()),
++		},
++		{
++			// The singular endpoint identifies one arrival, so it needs the trip
++			// and service date the stop is being asked about.
++			name: "arrival-and-departure-for-stop",
++			url: fmt.Sprintf("/api/where/arrival-and-departure-for-stop/25_%s.json?key=TEST&tripId=25_%s&serviceDate=%d",
++				stopID, tripID, serviceDate.UnixMilli()),
++		},
++		{
++			name: "trip-for-vehicle",
++			url:  fmt.Sprintf("/api/where/trip-for-vehicle/25_%s.json?key=TEST&includeStatus=true", vehicleID),
++		},
++		{
++			// Without a status there are no situations resolved alongside it to
++			// reuse, so the entry's own IDs must still resolve.
++			name: "trip-details without status",
++			url:  fmt.Sprintf("/api/where/trip-details/25_%s.json?key=TEST&includeStatus=false", tripID),
++		},
++		{
++			name: "trip-for-vehicle without status",
++			url:  fmt.Sprintf("/api/where/trip-for-vehicle/25_%s.json?key=TEST&includeStatus=false", vehicleID),
++		},
++	}
++
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			resp, body := callAPIHandler[map[string]any](t, api, tt.url)
++			require.Equal(t, http.StatusOK, resp.StatusCode)
++
++			var emitted []string
++			collectSituationIDs(body, &emitted)
++			referenced := referencedSituationIDs(t, body)
++
++			for _, id := range emitted {
++				assert.True(t, referenced[id],
++					"situationId %q must resolve to an entry in references.situations", id)
++			}
++			require.Contains(t, emitted, seededSituationID,
++				"expected the seeded alert to surface as a situationId")
++		})
++	}
++}
++
++// anyTripAndStop returns a trip from the fixture together with one of its stops.
++func anyTripAndStop(t *testing.T, api *RestAPI) (string, string) {
++	t.Helper()
++
++	ctx := context.Background()
++	trips, err := api.GtfsManager.GtfsDB.Queries.ListTrips(ctx)
++	require.NoError(t, err)
++	require.NotEmpty(t, trips, "fixture must contain trips")
++
++	stopTimes, err := api.GtfsManager.GtfsDB.Queries.GetStopTimesForTrip(ctx, trips[0].ID)
++	require.NoError(t, err)
++	require.NotEmpty(t, stopTimes, "fixture trip must serve stops")
++
++	return trips[0].ID, stopTimes[0].StopID
++}
++
++func anyRealTimeVehicleID(t *testing.T, api *RestAPI) string {
++	t.Helper()
++
++	// Must have a trip: an idle vehicle takes trip-for-vehicle's 404 branch,
++	// which never reaches the situations this test is about.
++	for _, vehicle := range api.GtfsManager.GetRealTimeVehicles() {
++		if vehicle.ID != nil && vehicle.ID.ID != "" && vehicle.Trip != nil && vehicle.Trip.ID.ID != "" {
++			return vehicle.ID.ID
++		}
++	}
++	t.Fatal("fixture must contain a real-time vehicle running a trip")
++	return ""
++}
++
++// TestTripSituationRefsAgencyFallback covers both paths tripSituationRefs takes
++// for a trip it has already loaded: reading the agency out of routeAgencyMap,
++// and falling back to a lookup when that map has no entry for the trip's route.
++// Both must produce the same combined-form ID â€” an unresolved agency would emit
++// the bare alert ID, which resolves against nothing the response carries.
++func TestTripSituationRefsAgencyFallback(t *testing.T) {
++	api, cleanup := createTestApiWithRealTimeData(t, clock.RealClock{})
++	defer cleanup()
++
++	ctx := context.Background()
++	tripID, _ := anyTripAndStop(t, api)
++	trip, err := api.GtfsManager.GtfsDB.Queries.GetTrip(ctx, tripID)
++	require.NoError(t, err)
++
++	rawAgencyID := "25"
++	api.GtfsManager.AddAlertForTest(gogtfs.Alert{
++		ID:               "trip-situation-refs-alert",
++		InformedEntities: []gogtfs.AlertInformedEntity{{AgencyID: &rawAgencyID}},
++		Header:           []gogtfs.AlertText{{Text: "Test Agency Alert", Language: "en"}},
++	})
++	const wantSituationID = "25_trip-situation-refs-alert"
++
++	tripsByID := map[string]gtfsdb.Trip{tripID: trip}
++
++	tests := []struct {
++		name           string
++		routeAgencyMap map[string]string
++	}{
++		{name: "route agency known", routeAgencyMap: map[string]string{trip.RouteID: rawAgencyID}},
++		{name: "route agency unknown", routeAgencyMap: map[string]string{}},
++	}
++
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			refs := api.tripSituationRefs(ctx, tripID, tripsByID, tt.routeAgencyMap)
++
++			assert.Contains(t, situationIDsFromRefs(refs), wantSituationID,
++				"the situation ID must carry the agency prefix on both paths")
++		})
++	}
++}
++
++// TestSituationRefsFromAlertsAgencyScope covers an alert reachable through both
++// a route and a stop that belong to different agencies. Both paths must produce
++// the same ID, or references.situations carries the alert twice and an entry's
++// situationIds resolve to only one of the two.
++func TestSituationRefsFromAlertsAgencyScope(t *testing.T) {
++	informedAgencyID := "1"
++	stopID := "10190"
++
++	tests := []struct {
++		name             string
++		alert            gogtfs.Alert
++		callerAgencyIDs  []string
++		wantSituationIDs []string
++		wantCollected    []string
++	}{
++		{
++			name: "The alert's own agency wins over whichever lookup found it",
++			alert: gogtfs.Alert{
++				ID:               "86736",
++				InformedEntities: []gogtfs.AlertInformedEntity{{AgencyID: &informedAgencyID}, {StopID: &stopID}},
++			},
++			callerAgencyIDs:  []string{"1", "40"},
++			wantSituationIDs: []string{"1_86736", "1_86736"},
++			wantCollected:    []string{"1_86736"},
++		},
++		{
++			// Known limitation rather than desired behaviour: with no agency to
++			// read off the alert, the two paths have nothing in common to agree
++			// on. Every alert in the feeds maglev serves names one.
++			name: "An alert naming no agency falls back to the caller's",
++			alert: gogtfs.Alert{
++				ID:               "86736",
++				InformedEntities: []gogtfs.AlertInformedEntity{{StopID: &stopID}},
++			},
++			callerAgencyIDs:  []string{"1", "40"},
++			wantSituationIDs: []string{"1_86736", "40_86736"},
++			wantCollected:    []string{"1_86736", "40_86736"},
++		},
++	}
++
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			// One collector across both paths, as a handler reaching the same
++			// alert through a route and through a stop would have.
++			collected := newSituationCollector()
++
++			for i, callerAgencyID := range tt.callerAgencyIDs {
++				refs := situationRefsFromAlerts([]gogtfs.Alert{tt.alert}, callerAgencyID)
++				require.Len(t, refs, 1)
++				assert.Equal(t, tt.wantSituationIDs[i], refs[0].ID,
++					"alert reached with caller agency %q", callerAgencyID)
++				collected.addRefs(refs)
++			}
++
++			collectedIDs := make([]string, 0, len(collected.refs))
++			for _, ref := range collected.refs {
++				collectedIDs = append(collectedIDs, ref.ID)
++			}
++			assert.Equal(t, tt.wantCollected, collectedIDs,
++				"references.situations must carry the alert once per distinct ID")
++		})
++	}
++}
++
++func TestSituationID(t *testing.T) {
++	tests := []struct {
++		name     string
++		alertID  string
++		agencyID string
++		want     string
++	}{
++		{
++			name:     "Bare alert ID gets the agency prefix",
++			alertID:  "92239",
++			agencyID: "1",
++			want:     "1_92239",
++		},
++		{
++			// Puget Sound's feed is exported by an OBA instance, so its alert
++			// IDs already carry the prefix. Upstream reports "1_92239".
++			name:     "Already-prefixed alert ID is left alone",
++			alertID:  "1_92239",
++			agencyID: "1",
++			want:     "1_92239",
++		},
++		{
++			name:     "A different agency's prefix is not mistaken for ours",
++			alertID:  "40_92239",
++			agencyID: "1",
++			want:     "1_40_92239",
++		},
++		{
++			name:     "Unknown agency leaves the ID untouched",
++			alertID:  "92239",
++			agencyID: "",
++			want:     "92239",
++		},
++	}
++
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			assert.Equal(t, tt.want, situationID(tt.alertID, tt.agencyID))
++		})
++	}
++}
+diff --git a/internal/restapi/trip_details_handler.go b/internal/restapi/trip_details_handler.go
+index 6366f280..3ea56b33 100644
+--- a/internal/restapi/trip_details_handler.go
++++ b/internal/restapi/trip_details_handler.go
+@@ -226,10 +226,11 @@ func (api *RestAPI) tripDetailsHandler(w http.ResponseWriter, r *http.Request) {
+ 
+ 	var schedule *models.Schedule
+ 	var status *models.TripStatus
++	var statusExtras *tripStatusExtras
+ 
+ 	if params.IncludeStatus {
+ 		var statusErr error
+-		status, _, statusErr = api.BuildTripStatus(ctx, agencyID, trip.ID, requestedVehicle, serviceDate, currentTime)
++		status, statusExtras, statusErr = api.BuildTripStatus(ctx, agencyID, trip.ID, requestedVehicle, serviceDate, currentTime)
+ 		if statusErr != nil {
+ 			api.Logger.Warn("BuildTripStatus failed",
+ 				"trip_id", trip.ID,
+@@ -254,12 +255,9 @@ func (api *RestAPI) tripDetailsHandler(w http.ResponseWriter, r *http.Request) {
+ 		}
+ 	}
+ 
+-	var situationsIDs []string
+-	if status != nil && len(status.SituationIDs) > 0 {
+-		situationsIDs = status.SituationIDs
+-	} else {
+-		situationsIDs = api.GetSituationIDsForTrip(r.Context(), tripID)
+-	}
++	// trip is looked up by tripID and BuildTripStatus was given trip.ID, so when
++	// the status was built its situations are this trip's and are reused here.
++	situationsIDs, situationRefs := api.tripSituationsFor(ctx, tripID, statusExtras)
+ 
+ 	freqRows, err := api.GtfsManager.GtfsDB.Queries.GetFrequenciesForTrip(ctx, tripID)
+ 	if err != nil {
+@@ -331,13 +329,7 @@ func (api *RestAPI) tripDetailsHandler(w http.ResponseWriter, r *http.Request) {
+ 		agencyModel := models.AgencyReferenceFromDatabase(&agency)
+ 		references.Agencies = append(references.Agencies, agencyModel)
+ 
+-		if len(situationsIDs) > 0 {
+-			alerts := api.GtfsManager.GetAlertsForTrip(r.Context(), tripID)
+-			if len(alerts) > 0 {
+-				situations := api.BuildSituationReferences(alerts)
+-				references.Situations = append(references.Situations, situations...)
+-			}
+-		}
++		references.Situations = append(references.Situations, situationRefs...)
+ 
+ 		if params.IncludeSchedule && schedule != nil {
+ 			stopIDs := make([]string, 0, len(schedule.StopTimes))
+diff --git a/internal/restapi/trip_for_vehicle_handler.go b/internal/restapi/trip_for_vehicle_handler.go
+index 277b4ab3..2b3eb44f 100644
+--- a/internal/restapi/trip_for_vehicle_handler.go
++++ b/internal/restapi/trip_for_vehicle_handler.go
+@@ -70,9 +70,10 @@ func (api *RestAPI) tripForVehicleHandler(w http.ResponseWriter, r *http.Request
+ 	serviceDate, midnight := utils.ServiceDateMidnight(params.ServiceDate, currentTime)
+ 
+ 	var status *models.TripStatus
++	var statusExtras *tripStatusExtras
+ 	if params.IncludeStatus {
+ 		var statusErr error
+-		status, _, statusErr = api.BuildTripStatus(ctx, agencyID, tripID, nil, serviceDate, currentTime)
++		status, statusExtras, statusErr = api.BuildTripStatus(ctx, agencyID, tripID, nil, serviceDate, currentTime)
+ 		if statusErr != nil {
+ 			api.Logger.Warn("failed to build trip status",
+ 				"tripID", tripID,
+@@ -111,12 +112,9 @@ func (api *RestAPI) tripForVehicleHandler(w http.ResponseWriter, r *http.Request
+ 		}
+ 	}
+ 
+-	var situationIDs []string
+-	if status != nil && len(status.SituationIDs) > 0 {
+-		situationIDs = status.SituationIDs
+-	} else {
+-		situationIDs = api.GetSituationIDsForTrip(r.Context(), tripID)
+-	}
++	// BuildTripStatus above was given this same tripID, so when the status was
++	// built its situations are this trip's and are reused here.
++	situationIDs, situationRefs := api.tripSituationsFor(ctx, tripID, statusExtras)
+ 
+ 	entry := &models.TripDetails{
+ 		TripID:       utils.FormCombinedID(agencyID, tripID),
+@@ -135,6 +133,7 @@ func (api *RestAPI) tripForVehicleHandler(w http.ResponseWriter, r *http.Request
+ 			api.serverErrorResponse(w, r, err)
+ 			return
+ 		}
++		references.Situations = situationRefs
+ 	}
+ 
+ 	response := models.NewEntryResponse(entry, *references, api.Clock)
+diff --git a/internal/restapi/trips_for_location_handler.go b/internal/restapi/trips_for_location_handler.go
+index 4f2b0458..d22956f1 100644
+--- a/internal/restapi/trips_for_location_handler.go
++++ b/internal/restapi/trips_for_location_handler.go
+@@ -98,7 +98,7 @@ func (api *RestAPI) tripsForLocationHandler(w http.ResponseWriter, r *http.Reque
+ 	}
+ 
+ 	// Build entries from pre-fetched trip data
+-	result := api.buildTripsForLocationEntries(ctx, trips, tripAgencyMap, routeAgencyMap, parsedReq, w, r)
++	result, situations := api.buildTripsForLocationEntries(ctx, trips, tripAgencyMap, routeAgencyMap, parsedReq, w, r)
+ 	if result == nil {
+ 		return
+ 	}
+@@ -117,6 +117,7 @@ func (api *RestAPI) tripsForLocationHandler(w http.ResponseWriter, r *http.Reque
+ 			IncludeTrip: parsedReq.IncludeTrip,
+ 			Stops:       stops,
+ 			Trips:       result,
++			Situations:  situations,
+ 		})
+ 	}
+ 
+@@ -240,8 +241,10 @@ func (api *RestAPI) getActiveTrips(stopTimes []gtfsdb.StopTime, realTimeVehicles
+ 	return activeTrips
+ }
+ 
+-// buildTripsForLocationEntries builds trip entries from pre-fetched batch data.
+-// It returns nil only when an error response has already been sent to the client.
++// buildTripsForLocationEntries builds trip entries from pre-fetched batch data,
++// returning the entries alongside the situations they reference.
++// It returns nil entries only when an error response has already been sent to
++// the client.
+ func (api *RestAPI) buildTripsForLocationEntries(
+ 	ctx context.Context,
+ 	trips []gtfsdb.Trip,
+@@ -250,9 +253,9 @@ func (api *RestAPI) buildTripsForLocationEntries(
+ 	request *tripsForLocationRequest,
+ 	w http.ResponseWriter,
+ 	r *http.Request,
+-) []models.TripsForLocationListEntry {
++) ([]models.TripsForLocationListEntry, []situationRef) {
+ 	if len(trips) == 0 {
+-		return []models.TripsForLocationListEntry{}
++		return []models.TripsForLocationListEntry{}, nil
+ 	}
+ 
+ 	tripsMap := make(map[string]gtfsdb.Trip)
+@@ -304,7 +307,7 @@ func (api *RestAPI) buildTripsForLocationEntries(
+ 		stopTimesRaw, err := api.GtfsManager.GtfsDB.Queries.GetStopTimesForTripIDs(ctx, validVehicleTrips)
+ 		if err != nil {
+ 			api.serverErrorResponse(w, r, err)
+-			return nil
++			return nil, nil
+ 		}
+ 		for _, st := range stopTimesRaw {
+ 			stopTimesMap[st.TripID] = append(stopTimesMap[st.TripID], st)
+@@ -373,11 +376,12 @@ func (api *RestAPI) buildTripsForLocationEntries(
+ 	}
+ 
+ 	var result []models.TripsForLocationListEntry
++	situations := newSituationCollector()
+ 
+ 	for _, tripID := range validVehicleTrips {
+ 		if ctx.Err() != nil {
+ 			api.clientCanceledResponse(w, r, ctx.Err())
+-			return nil
++			return nil, nil
+ 		}
+ 
+ 		agencyID := tripAgencyMap[tripID]
+@@ -426,17 +430,23 @@ func (api *RestAPI) buildTripsForLocationEntries(
+ 			}
+ 		}
+ 
++		// The trip's route and agency are already resolved here, so the alerts
++		// are looked up directly rather than through GetSituationIDsForTrip,
++		// which would re-query both per trip and discard the alerts we need
++		// for the situation references.
++		alerts := api.GtfsManager.GetAlertsByIDs(tripID, tripData.RouteID, agencyID)
++
+ 		entry := models.TripsForLocationListEntry{
+ 			Frequency:    nil,
+ 			Schedule:     schedule,
+ 			Status:       status,
+ 			ServiceDate:  tripMidnight.UnixMilli(),
+-			SituationIds: api.GetSituationIDsForTrip(ctx, tripID),
++			SituationIds: situations.add(alerts, agencyID),
+ 			TripId:       utils.FormCombinedID(agencyID, tripID),
+ 		}
+ 		result = append(result, entry)
+ 	}
+-	return result
++	return result, situations.refs
+ }
+ 
+ type blockTripsKey struct {
+@@ -516,6 +526,7 @@ type ReferenceParams struct {
+ 	IncludeTrip bool
+ 	Stops       []gtfsdb.Stop
+ 	Trips       []models.TripsForLocationListEntry
++	Situations  []situationRef
+ }
+ 
+ func (api *RestAPI) BuildReference(w http.ResponseWriter, r *http.Request, ctx context.Context, params ReferenceParams) models.ReferencesModel {
+@@ -542,9 +553,11 @@ type referenceBuilder struct {
+ 	presentAgencies map[string]models.AgencyReference
+ 	stopList        []models.Stop
+ 	tripsRefList    []models.Trip
++	situations      []situationRef
+ }
+ 
+ func (rb *referenceBuilder) build(params ReferenceParams) error {
++	rb.situations = params.Situations
+ 	rb.collectTripIDs(params.Trips)
+ 	rb.buildStopList(params.Stops)
+ 
+@@ -801,26 +814,13 @@ func (rb *referenceBuilder) toReferencesModel() models.ReferencesModel {
+ 	references.Routes = rb.getRoutesList()
+ 	references.Stops = stops
+ 	references.Trips = trips
++	references.Situations = rb.getSituationsList()
+ 
+ 	return *references
+ }
+ 
+-func (rb *referenceBuilder) getAgenciesList() []models.AgencyReference {
+-	agencies := make([]models.AgencyReference, 0, len(rb.presentAgencies))
+-	for _, agency := range rb.presentAgencies {
+-		agencies = append(agencies, agency)
+-	}
+-	return agencies
+-}
+-
+-func (rb *referenceBuilder) getRoutesList() []models.Route {
+-	routes := make([]models.Route, 0, len(rb.presentRoutes))
+-	for _, route := range rb.presentRoutes {
+-		if route.ID != "" {
+-			routes = append(routes, route)
+-		}
+-	}
+-	return routes
++func (rb *referenceBuilder) getSituationsList() []models.Situation {
++	return rb.api.situationReferences(rb.situations)
+ }
+ 
+ // buildScheduleFromMemory constructs a TripsSchedule from pre-fetched stop times, shape points, and block trips.
+diff --git a/internal/restapi/trips_for_location_handler_test.go b/internal/restapi/trips_for_location_handler_test.go
+index 99f960ba..2536e709 100644
+--- a/internal/restapi/trips_for_location_handler_test.go
++++ b/internal/restapi/trips_for_location_handler_test.go
+@@ -720,3 +720,45 @@ func TestTripsForLocationHandler_ContextCancellation(t *testing.T) {
+ 		assert.Contains(t, rec.Body.String(), "gateway timeout")
+ 	})
+ }
++
++// TestTripsForLocationHandler_SituationReferences verifies that every
++// situationId emitted on a list entry resolves to an entry in
++// references.situations.
++func TestTripsForLocationHandler_SituationReferences(t *testing.T) {
++	api, cleanup := createTestApiWithRealTimeData(t, clock.RealClock{})
++	defer cleanup()
++
++	// createTestApiWithRealTimeData returns before the first feed poll lands, and
++	// this endpoint selects trips from live vehicles, so wait for one to arrive.
++	require.Eventually(t, func() bool {
++		return len(api.GtfsManager.GetRealTimeVehicles()) > 0
++	}, 10*time.Second, 20*time.Millisecond, "real-time vehicles never loaded")
++
++	// Real-time alerts carry the raw (un-prefixed) agency ID from the feed.
++	rawAgencyID := "25"
++	api.GtfsManager.AddAlertForTest(gtfs.Alert{
++		ID:               "test-alert-trips-for-location",
++		InformedEntities: []gtfs.AlertInformedEntity{{AgencyID: &rawAgencyID}},
++		Header:           []gtfs.AlertText{{Text: "Test Agency Alert", Language: "en"}},
++	})
++
++	resp, model := callAPIHandler[TripsForLocationResponse](t, api, tripsForLocationURL(2.0, 3.0))
++
++	require.Equal(t, http.StatusOK, resp.StatusCode)
++	require.NotEmpty(t, model.Data.List, "expected trips so situation references can be asserted")
++
++	referenced := make(map[string]bool, len(model.Data.References.Situations))
++	for _, situation := range model.Data.References.Situations {
++		referenced[situation.ID] = true
++	}
++
++	var emitted []string
++	for _, entry := range model.Data.List {
++		for _, id := range entry.SituationIds {
++			emitted = append(emitted, id)
++			assert.True(t, referenced[id], "situationId %q must resolve to a situation reference", id)
++		}
++	}
++	require.Contains(t, emitted, "25_test-alert-trips-for-location",
++		"expected the seeded alert to surface as a situationId")
++}
+diff --git a/internal/restapi/trips_for_route_handler.go b/internal/restapi/trips_for_route_handler.go
+index a76cbe68..d44ea94c 100644
+--- a/internal/restapi/trips_for_route_handler.go
++++ b/internal/restapi/trips_for_route_handler.go
+@@ -194,7 +194,7 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 	if len(allLinkedBlocks) == 0 && len(nullBlockTrips) == 0 {
+ 		var references models.ReferencesModel
+ 		if includeReferences {
+-			references = buildTripReferences(api, ctx, includeTrip, []models.TripsForRouteListEntry{}, []gtfsdb.Stop{}, nil, nil)
++			references = api.buildTripReferences(ctx, tripReferenceParams{IncludeTrip: includeTrip})
+ 		} else {
+ 			references = *models.NewEmptyReferences()
+ 		}
+@@ -329,6 +329,16 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 		return
+ 	}
+ 
++	situations := newSituationCollector()
++
++	// Indexed so an entry's route and agency resolve without a per-trip query.
++	// entryTripID can differ from the active trip on interlined blocks, so the
++	// route must come from the entry trip itself.
++	tripsByID := make(map[string]gtfsdb.Trip, len(fetchedTrips))
++	for _, trip := range fetchedTrips {
++		tripsByID[trip.ID] = trip
++	}
++
+ 	var result []models.TripsForRouteListEntry
+ 	for _, fetchedTrip := range fetchedTrips {
+ 		if ctx.Err() != nil {
+@@ -359,6 +369,13 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 				// headsign, ...) reflects the entry's tripId rather than the
+ 				// active trip's.
+ 				fetchedTrips = append(fetchedTrips, resolution.SelectedTrip)
++				// Index it too: the entry's situations are looked up by
++				// entryTripID, which is this trip, and an unindexed trip sends
++				// tripSituationRefs back to the database for what is already here.
++				tripsByID[resolution.SelectedTrip.ID] = resolution.SelectedTrip
++				if _, known := routeAgencyMap[resolution.SelectedTrip.RouteID]; !known {
++					routeAgencyMap[resolution.SelectedTrip.RouteID] = resolution.EntryAgencyID
++				}
+ 			}
+ 			// If unresolved (no queried-route trip exists anywhere in this
+ 			// block), entryTripID/entryAgencyID keep their active-trip
+@@ -400,7 +417,7 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 			Schedule:     schedule,
+ 			Status:       status,
+ 			ServiceDate:  todayMidnight.UnixMilli(),
+-			SituationIds: api.GetSituationIDsForTrip(r.Context(), entryTripID),
++			SituationIds: situations.addRefs(api.tripSituationRefs(ctx, entryTripID, tripsByID, routeAgencyMap)),
+ 			TripId:       utils.FormCombinedID(entryAgencyID, entryTripID),
+ 		}
+ 		result = append(result, entry)
+@@ -427,14 +444,27 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 		// Try the full ID first; if not found, strip a trailing numeric suffix
+ 		// (e.g., ".00060") that some feeds append to distinguish duplicated runs.
+ 		baseTripID := dupTripID
+-		if _, err := api.GtfsManager.GtfsDB.Queries.GetTrip(ctx, dupTripID); err != nil {
+-			if !errors.Is(err, sql.ErrNoRows) {
++		baseTrip, baseTripErr := api.GtfsManager.GtfsDB.Queries.GetTrip(ctx, dupTripID)
++		if baseTripErr != nil {
++			if !errors.Is(baseTripErr, sql.ErrNoRows) {
+ 				api.Logger.Warn("trips-for-route: failed to resolve DUPLICATED trip ID",
+-					"dup_trip_id", dupTripID, "error", err)
++					"dup_trip_id", dupTripID, "error", baseTripErr)
+ 			}
+ 			stripped := stripNumericSuffix(dupTripID)
+ 			if stripped != dupTripID {
+ 				baseTripID = stripped
++				baseTrip, baseTripErr = api.GtfsManager.GtfsDB.Queries.GetTrip(ctx, baseTripID)
++			}
++		}
++
++		// Index the base trip before the situation lookup below: an unindexed
++		// trip sends tripSituationRefs back to the database for the record
++		// already in hand, the same reuse the interlined path above relies on.
++		if baseTripErr == nil {
++			tripsByID[baseTrip.ID] = baseTrip
++			if !filteredRouteTrips[baseTripID] {
++				fetchedTrips = append(fetchedTrips, baseTrip)
++				filteredRouteTrips[baseTripID] = true
+ 			}
+ 		}
+ 
+@@ -464,18 +494,10 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 			Schedule:     schedule,
+ 			Status:       status,
+ 			ServiceDate:  todayMidnight.UnixMilli(),
+-			SituationIds: api.GetSituationIDsForTrip(r.Context(), baseTripID),
++			SituationIds: situations.addRefs(api.tripSituationRefs(ctx, baseTripID, tripsByID, routeAgencyMap)),
+ 			TripId:       utils.FormCombinedID(agencyID, dupTripID),
+ 		}
+ 		result = append(result, entry)
+-
+-		if !filteredRouteTrips[baseTripID] {
+-			baseTrip, err := api.GtfsManager.GtfsDB.Queries.GetTrip(ctx, baseTripID)
+-			if err == nil {
+-				fetchedTrips = append(fetchedTrips, baseTrip)
+-				filteredRouteTrips[baseTripID] = true
+-			}
+-		}
+ 	}
+ 
+ 	if result == nil {
+@@ -498,7 +520,14 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 			}
+ 		}
+ 
+-		references = buildTripReferences(api, ctx, includeTrip, result, stops, fetchedTrips, stopIDsMap)
++		references = api.buildTripReferences(ctx, tripReferenceParams{
++			IncludeTrip:     includeTrip,
++			Trips:           result,
++			Stops:           stops,
++			PreFetchedTrips: fetchedTrips,
++			StopIDMap:       stopIDsMap,
++			Situations:      situations.refs,
++		})
+ 	} else {
+ 		references = *models.NewEmptyReferences()
+ 	}
+@@ -694,166 +723,197 @@ func collectStopIDsFromSchedule(schedule *models.TripsSchedule, stopIDsMap map[s
+ 	}
+ }
+ 
+-func buildTripReferences(
+-	api *RestAPI,
++// tripReferenceParams bundles the inputs the trips-for-route reference block is
++// built from, so the builder does not grow another positional parameter each
++// time a reference kind is added.
++type tripReferenceParams struct {
++	IncludeTrip     bool
++	Trips           []models.TripsForRouteListEntry
++	Stops           []gtfsdb.Stop
++	PreFetchedTrips []gtfsdb.Trip
++	StopIDMap       map[string]string
++	Situations      []situationRef
++}
++
++func (api *RestAPI) buildTripReferences(ctx context.Context, params tripReferenceParams) models.ReferencesModel {
++	sets := newTripReferenceSets()
++	sets.collectPreFetchedTrips(params.PreFetchedTrips)
++	sets.collectTripIDsFromEntries(params.Trips)
++	api.fillMissingTrips(ctx, sets)
++	api.fillRoutesAndAgencies(ctx, sets)
++
++	references := models.NewEmptyReferences()
++	references.Agencies = utils.MapValues(sets.agencies)
++	references.Routes = sets.routeList()
++	references.Stops = api.stopReferenceList(ctx, params.Stops, params.StopIDMap)
++	references.Trips = sets.tripReferenceList(params.IncludeTrip)
++	references.Situations = api.situationReferences(params.Situations)
++	return *references
++}
++
++// tripSituationRefs resolves a trip's situations from data already loaded,
++// falling back to situationRefsForTrip when the trip was not among those
++// fetched â€” DUPLICATED trips with no static counterpart, for instance.
++func (api *RestAPI) tripSituationRefs(
+ 	ctx context.Context,
+-	includeTrip bool,
+-	trips []models.TripsForRouteListEntry,
+-	stops []gtfsdb.Stop,
+-	preFetchedTrips []gtfsdb.Trip,
+-	stopIDMap map[string]string,
+-) models.ReferencesModel {
+-
+-	presentTrips := make(map[string]models.Trip)
+-	presentRoutes := make(map[string]models.Route)
+-
+-	// referencedTripIDs tracks the trips referenced by the response (entry
+-	// tripIds, schedule.nextTripId/previousTripId, status.activeTripId) that
+-	// were not part of preFetchedTrips and still need to be fetched, so their
+-	// full records are present in references.trips. Encoding this as an
+-	// explicit set rather than inferring it from a zero-value ID sentinel makes
+-	// it unambiguous which trips are still missing from the references.
+-	referencedTripIDs := make(map[string]bool)
+-
+-	for _, trip := range preFetchedTrips {
+-		presentTrips[trip.ID] = models.Trip{
+-			ID:            trip.ID,
+-			RouteID:       trip.RouteID,
+-			ServiceID:     trip.ServiceID,
+-			TripHeadsign:  trip.TripHeadsign.String,
+-			TripShortName: trip.TripShortName.String,
+-			DirectionID:   strconv.FormatInt(trip.DirectionID.Int64, 10),
+-			BlockID:       trip.BlockID.String,
+-			ShapeID:       trip.ShapeID.String,
+-		}
+-		presentRoutes[trip.RouteID] = models.Route{}
++	tripID string,
++	tripsByID map[string]gtfsdb.Trip,
++	routeAgencyMap map[string]string,
++) []situationRef {
++	trip, indexed := tripsByID[tripID]
++	if !indexed {
++		return api.situationRefsForTrip(ctx, tripID)
+ 	}
+ 
++	// An unknown agency would scope the situation ID to "", emitting the bare
++	// alert ID where every other ID in the response is combined-form. The
++	// fallback resolves the route and agency itself rather than guessing.
++	agencyID, agencyKnown := routeAgencyMap[trip.RouteID]
++	if !agencyKnown {
++		return api.situationRefsForTrip(ctx, tripID)
++	}
++
++	return situationRefsFromAlerts(api.GtfsManager.GetAlertsByIDs(tripID, trip.RouteID, agencyID), agencyID)
++}
++
++// tripReferenceSets accumulates the entities a trips-for-route response refers
++// to, keyed by bare ID so each is emitted once.
++type tripReferenceSets struct {
++	trips    map[string]models.Trip
++	routes   map[string]models.Route
++	agencies map[string]models.AgencyReference
++	// missing holds the trips the response refers to â€” entry tripIds,
++	// schedule.nextTripId/previousTripId, status.activeTripId â€” whose full
++	// records have not been fetched yet. Tracking them explicitly, rather than
++	// inferring them from a zero-valued reference, keeps it unambiguous which
++	// trips still need a lookup.
++	missing map[string]bool
++}
++
++func newTripReferenceSets() *tripReferenceSets {
++	return &tripReferenceSets{
++		trips:    make(map[string]models.Trip),
++		routes:   make(map[string]models.Route),
++		agencies: make(map[string]models.AgencyReference),
++		missing:  make(map[string]bool),
++	}
++}
++
++// noteTripID records a trip ID that needs a reference, leaving the details to be
++// filled in later if they are not known yet.
++func (s *tripReferenceSets) noteTripID(combinedID string) {
++	_, tripID, err := utils.ExtractAgencyIDAndCodeID(combinedID)
++	if err != nil {
++		return
++	}
++	if _, exists := s.trips[tripID]; !exists {
++		s.trips[tripID] = models.Trip{}
++		s.missing[tripID] = true
++	}
++}
++
++func (s *tripReferenceSets) collectPreFetchedTrips(trips []gtfsdb.Trip) {
+ 	for _, trip := range trips {
+-		_, tripID, _ := utils.ExtractAgencyIDAndCodeID(trip.GetTripId())
+-		if _, exists := presentTrips[tripID]; !exists {
+-			presentTrips[tripID] = models.Trip{}
+-			referencedTripIDs[tripID] = true
+-		}
++		s.trips[trip.ID] = newTripReference(trip)
++		s.routes[trip.RouteID] = models.Route{}
++		delete(s.missing, trip.ID)
+ 	}
++}
++
++// collectTripIDsFromEntries records every trip an entry points at: its own, the
++// adjacent trips in its block, and the trip its vehicle is currently executing.
++func (s *tripReferenceSets) collectTripIDsFromEntries(entries []models.TripsForRouteListEntry) {
++	for _, entry := range entries {
++		s.noteTripID(entry.GetTripId())
+ 
+-	for _, entry := range trips {
+ 		if entry.Schedule != nil {
+-			if entry.Schedule.NextTripId != "" {
+-				_, nextTripID, err := utils.ExtractAgencyIDAndCodeID(entry.Schedule.NextTripId)
+-				if err == nil {
+-					if _, exists := presentTrips[nextTripID]; !exists {
+-						presentTrips[nextTripID] = models.Trip{}
+-						referencedTripIDs[nextTripID] = true
+-					}
+-				}
+-			}
+-			if entry.Schedule.PreviousTripId != "" {
+-				_, prevTripID, err := utils.ExtractAgencyIDAndCodeID(entry.Schedule.PreviousTripId)
+-				if err == nil {
+-					if _, exists := presentTrips[prevTripID]; !exists {
+-						presentTrips[prevTripID] = models.Trip{}
+-						referencedTripIDs[prevTripID] = true
+-					}
+-				}
+-			}
++			s.noteTripID(entry.Schedule.NextTripId)
++			s.noteTripID(entry.Schedule.PreviousTripId)
+ 		}
+-
+-		if entry.Status != nil && entry.Status.ActiveTripID != "" {
+-			_, activeTripID, err := utils.ExtractAgencyIDAndCodeID(entry.Status.ActiveTripID)
+-			if err == nil {
+-				if _, exists := presentTrips[activeTripID]; !exists {
+-					presentTrips[activeTripID] = models.Trip{}
+-					referencedTripIDs[activeTripID] = true
+-				}
+-			}
++		if entry.Status != nil {
++			s.noteTripID(entry.Status.ActiveTripID)
+ 		}
+ 	}
++}
++
++// fillMissingTrips loads the trips that were noted by ID but never fetched.
++func (api *RestAPI) fillMissingTrips(ctx context.Context, sets *tripReferenceSets) {
++	if len(sets.missing) == 0 {
++		return
++	}
+ 
+-	var tripIDsToFetch []string
+-	for id := range referencedTripIDs {
+-		tripIDsToFetch = append(tripIDsToFetch, id)
++	missingIDs := make([]string, 0, len(sets.missing))
++	for id := range sets.missing {
++		missingIDs = append(missingIDs, id)
+ 	}
+ 
+-	if len(tripIDsToFetch) > 0 {
+-		extraTrips, err := api.GtfsManager.GtfsDB.Queries.GetTripsByIDs(ctx, tripIDsToFetch)
+-		if err != nil {
+-			logging.LogError(api.Logger, "failed to fetch trips for references", err)
+-		}
+-
+-		for _, trip := range extraTrips {
+-			presentTrips[trip.ID] = models.Trip{
+-				ID:            trip.ID,
+-				RouteID:       trip.RouteID,
+-				ServiceID:     trip.ServiceID,
+-				TripHeadsign:  trip.TripHeadsign.String,
+-				TripShortName: trip.TripShortName.String,
+-				DirectionID:   strconv.FormatInt(trip.DirectionID.Int64, 10),
+-				BlockID:       trip.BlockID.String,
+-				ShapeID:       trip.ShapeID.String,
+-			}
+-			presentRoutes[trip.RouteID] = models.Route{}
+-		}
++	trips, err := api.GtfsManager.GtfsDB.Queries.GetTripsByIDs(ctx, missingIDs)
++	if err != nil {
++		logging.LogError(api.Logger, "failed to fetch trips for references", err)
++		return
+ 	}
+ 
+-	var routeIDsToFetch []string
+-	for id := range presentRoutes {
+-		routeIDsToFetch = append(routeIDsToFetch, id)
++	sets.collectPreFetchedTrips(trips)
++}
++
++// fillRoutesAndAgencies loads every route the collected trips belong to, plus
++// the agency owning each of those routes.
++func (api *RestAPI) fillRoutesAndAgencies(ctx context.Context, sets *tripReferenceSets) {
++	routeIDs := make([]string, 0, len(sets.routes))
++	for id := range sets.routes {
++		routeIDs = append(routeIDs, id)
++	}
++	if len(routeIDs) == 0 {
++		return
+ 	}
+ 
+-	presentAgencies := make(map[string]models.AgencyReference)
++	routes, err := api.GtfsManager.GtfsDB.Queries.GetRoutesByIDs(ctx, routeIDs)
++	if err != nil {
++		logging.LogError(api.Logger, "failed to fetch routes for references", err)
++		return
++	}
+ 
+-	if len(routeIDsToFetch) > 0 {
+-		fetchedRoutes, err := api.GtfsManager.GtfsDB.Queries.GetRoutesByIDs(ctx, routeIDsToFetch)
+-		if err != nil {
+-			logging.LogError(api.Logger, "failed to fetch routes for references", err)
+-		}
+-
+-		for _, route := range fetchedRoutes {
+-			presentRoutes[route.ID] = models.NewRoute(
+-				utils.FormCombinedID(route.AgencyID, route.ID),
+-				route.AgencyID,
+-				route.ShortName.String,
+-				route.LongName.String,
+-				route.Desc.String,
+-				models.RouteType(route.Type),
+-				route.Url.String,
+-				route.Color.String,
+-				route.TextColor.String)
+-
+-			if _, exists := presentAgencies[route.AgencyID]; !exists {
+-				agency, err := api.GtfsManager.FindAgency(ctx, route.AgencyID)
+-				if err != nil {
+-					logging.LogError(api.Logger, "failed to fetch agency for references", err, slog.String("agency", route.AgencyID))
+-				}
++	for _, route := range routes {
++		sets.routes[route.ID] = models.NewRoute(
++			utils.FormCombinedID(route.AgencyID, route.ID),
++			route.AgencyID,
++			route.ShortName.String,
++			route.LongName.String,
++			route.Desc.String,
++			models.RouteType(route.Type),
++			route.Url.String,
++			route.Color.String,
++			route.TextColor.String)
++
++		api.addAgencyReference(ctx, sets, route.AgencyID)
++	}
++}
+ 
+-				if agency != nil {
+-					presentAgencies[agency.ID] = models.AgencyReferenceFromDatabase(agency)
+-				}
+-			}
+-		}
++func (api *RestAPI) addAgencyReference(ctx context.Context, sets *tripReferenceSets, agencyID string) {
++	if _, exists := sets.agencies[agencyID]; exists {
++		return
+ 	}
+ 
+-	stopRouteIDs := make(map[string][]string)
+-	if len(stops) > 0 {
+-		stopIDs := make([]string, len(stops))
+-		for i, s := range stops {
+-			stopIDs[i] = s.ID
+-		}
+-		if rows, err := api.GtfsManager.GtfsDB.Queries.GetRouteIDsForStops(ctx, stopIDs); err == nil {
+-			for _, row := range rows {
+-				if rid, ok := row.RouteID.(string); ok {
+-					stopRouteIDs[row.StopID] = append(stopRouteIDs[row.StopID], rid)
+-				}
+-			}
+-		}
++	agency, err := api.GtfsManager.FindAgency(ctx, agencyID)
++	if err != nil {
++		logging.LogError(api.Logger, "failed to fetch agency for references", err, slog.String("agency", agencyID))
++		return
++	}
++	if agency != nil {
++		sets.agencies[agency.ID] = models.AgencyReferenceFromDatabase(agency)
+ 	}
++}
++
++// stopReferenceList builds the stop references, labelling each with the combined
++// ID the list entries used for it.
++func (api *RestAPI) stopReferenceList(ctx context.Context, stops []gtfsdb.Stop, stopIDMap map[string]string) []models.Stop {
++	routeIDsByStop := api.routeIDsForStops(ctx, stops)
+ 
+ 	stopList := make([]models.Stop, 0, len(stops))
+ 	for _, stop := range stops {
+-		routeIdsString := stopRouteIDs[stop.ID]
+-		if routeIdsString == nil {
+-			routeIdsString = []string{}
++		routeIDs := routeIDsByStop[stop.ID]
++		if routeIDs == nil {
++			routeIDs = []string{}
+ 		}
+ 
+ 		direction := models.UnknownValue
+@@ -870,50 +930,91 @@ func buildTripReferences(
+ 			LocationType:       0,
+ 			Name:               nulls.StringOrEmpty(stop.Name),
+ 			Parent:             "",
+-			RouteIDs:           routeIdsString,
+-			StaticRouteIDs:     routeIdsString,
++			RouteIDs:           routeIDs,
++			StaticRouteIDs:     routeIDs,
+ 			WheelchairBoarding: utils.MapWheelchairBoarding(nulls.WheelchairBoardingOrUnknown(stop.WheelchairBoarding)),
+ 		})
+ 	}
++	return stopList
++}
+ 
+-	tripsRefList := make([]models.Trip, 0, len(presentTrips))
+-	if includeTrip {
+-		for _, trip := range presentTrips {
+-			// Ensure we have the route to get the Agency ID
+-			if route, ok := presentRoutes[trip.RouteID]; ok {
+-				currentAgency := route.AgencyID
+-				tripsRefList = append(tripsRefList, models.Trip{
+-					ID:            utils.FormCombinedID(currentAgency, trip.ID),
+-					RouteID:       utils.FormCombinedID(currentAgency, trip.RouteID),
+-					ServiceID:     utils.FormCombinedID(currentAgency, trip.ServiceID),
+-					TripHeadsign:  trip.TripHeadsign,
+-					TripShortName: trip.TripShortName,
+-					DirectionID:   trip.DirectionID,
+-					BlockID:       utils.FormCombinedID(currentAgency, trip.BlockID),
+-					ShapeID:       utils.FormCombinedID(currentAgency, trip.ShapeID),
+-					PeakOffPeak:   0,
+-					TimeZone:      "",
+-				})
+-			}
++func (api *RestAPI) routeIDsForStops(ctx context.Context, stops []gtfsdb.Stop) map[string][]string {
++	routeIDsByStop := make(map[string][]string)
++	if len(stops) == 0 {
++		return routeIDsByStop
++	}
++
++	stopIDs := make([]string, len(stops))
++	for i, stop := range stops {
++		stopIDs[i] = stop.ID
++	}
++
++	rows, err := api.GtfsManager.GtfsDB.Queries.GetRouteIDsForStops(ctx, stopIDs)
++	if err != nil {
++		logging.LogError(api.Logger, "failed to fetch routes for stop references", err)
++		return routeIDsByStop
++	}
++	for _, row := range rows {
++		if routeID, ok := row.RouteID.(string); ok {
++			routeIDsByStop[row.StopID] = append(routeIDsByStop[row.StopID], routeID)
++		}
++	}
++	return routeIDsByStop
++}
++
++// tripReferenceList emits the collected trips in combined-ID form. A trip whose
++// route was never resolved is skipped, since its agency is unknown.
++func (s *tripReferenceSets) tripReferenceList(includeTrip bool) []models.Trip {
++	tripsRefList := make([]models.Trip, 0, len(s.trips))
++	if !includeTrip {
++		return tripsRefList
++	}
++
++	for _, trip := range s.trips {
++		// A route that was noted but never resolved is still in the map as a
++		// zero value; combining IDs against its empty agency would emit
++		// references whose every ID is the empty string.
++		route, ok := s.routes[trip.RouteID]
++		if !ok || route.AgencyID == "" {
++			continue
+ 		}
++		tripsRefList = append(tripsRefList, models.Trip{
++			ID:            utils.FormCombinedID(route.AgencyID, trip.ID),
++			RouteID:       utils.FormCombinedID(route.AgencyID, trip.RouteID),
++			ServiceID:     utils.FormCombinedID(route.AgencyID, trip.ServiceID),
++			TripHeadsign:  trip.TripHeadsign,
++			TripShortName: trip.TripShortName,
++			DirectionID:   trip.DirectionID,
++			BlockID:       utils.FormCombinedID(route.AgencyID, trip.BlockID),
++			ShapeID:       utils.FormCombinedID(route.AgencyID, trip.ShapeID),
++			PeakOffPeak:   0,
++			TimeZone:      "",
++		})
+ 	}
++	return tripsRefList
++}
+ 
+-	// Convert maps to slices for response
+-	routes := make([]models.Route, 0, len(presentRoutes))
+-	for _, route := range presentRoutes {
++func (s *tripReferenceSets) routeList() []models.Route {
++	routes := make([]models.Route, 0, len(s.routes))
++	for _, route := range s.routes {
+ 		if route.ID != "" {
+ 			routes = append(routes, route)
+ 		}
+ 	}
++	return routes
++}
+ 
+-	agencyList := utils.MapValues(presentAgencies)
+-
+-	references := models.NewEmptyReferences()
+-	references.Agencies = agencyList
+-	references.Routes = routes
+-	references.Stops = stopList
+-	references.Trips = tripsRefList
+-	return *references
++func newTripReference(trip gtfsdb.Trip) models.Trip {
++	return models.Trip{
++		ID:            trip.ID,
++		RouteID:       trip.RouteID,
++		ServiceID:     trip.ServiceID,
++		TripHeadsign:  trip.TripHeadsign.String,
++		TripShortName: trip.TripShortName.String,
++		DirectionID:   strconv.FormatInt(trip.DirectionID.Int64, 10),
++		BlockID:       trip.BlockID.String,
++		ShapeID:       trip.ShapeID.String,
++	}
+ }
+ 
+ // stripNumericSuffix removes a trailing ".<digits>" from a trip ID.
+diff --git a/internal/restapi/trips_for_route_handler_test.go b/internal/restapi/trips_for_route_handler_test.go
+index 3effe530..dbe602e0 100644
+--- a/internal/restapi/trips_for_route_handler_test.go
++++ b/internal/restapi/trips_for_route_handler_test.go
+@@ -15,6 +15,7 @@ import (
+ 	"testing"
+ 	"time"
+ 
++	gogtfs "github.com/OneBusAway/go-gtfs"
+ 	"github.com/stretchr/testify/assert"
+ 	"github.com/stretchr/testify/require"
+ 	"maglev.onebusaway.org/gtfsdb"
+@@ -1207,6 +1208,52 @@ func TestResolveInterlinedEntryTripID_NoCandidateInBlock(t *testing.T) {
+ 	assert.False(t, resolved)
+ }
+ 
++// TestTripsForRouteHandler_SituationReferences verifies that every situationId
++// emitted on a list entry resolves to an entry in references.situations.
++func TestTripsForRouteHandler_SituationReferences(t *testing.T) {
++	// A dedicated manager, so the seeded alert is not clobbered by other tests
++	// sharing the package-level fixture.
++	api, cleanup := createTestApiWithRealTimeData(t, clock.RealClock{})
++	defer cleanup()
++
++	// Real-time alerts carry the raw (un-prefixed) route ID from the feed.
++	rawRouteID := "151"
++	api.GtfsManager.AddAlertForTest(gogtfs.Alert{
++		ID:               "test-alert-trips-for-route",
++		InformedEntities: []gogtfs.AlertInformedEntity{{RouteID: &rawRouteID}},
++		Header:           []gogtfs.AlertText{{Text: "Test Route Alert", Language: "en"}},
++	})
++
++	// ParseTimeParameter ignores api.Clock when no time= is given, so pin the
++	// handler's window explicitly. Midday Pacific on a weekday inside the RABA
++	// fixture's calendar range, when its trips are running.
++	queryTime := time.Date(2025, 6, 12, 19, 0, 0, 0, time.UTC)
++	url := fmt.Sprintf("/api/where/trips-for-route/25_151.json?key=TEST&includeSchedule=true&time=%d",
++		queryTime.UnixMilli())
++
++	resp, model := callAPIHandler[TripsForRouteResponse](t, api, url)
++
++	require.Equal(t, http.StatusOK, resp.StatusCode)
++	require.NotEmpty(t, model.Data.List, "expected trips so situation references can be asserted")
++
++	referenced := make(map[string]bool, len(model.Data.References.Situations))
++	for _, situation := range model.Data.References.Situations {
++		referenced[situation.ID] = true
++	}
++
++	var emitted []string
++	for _, entry := range model.Data.List {
++		for _, id := range entry.SituationIds {
++			emitted = append(emitted, id)
++			assert.True(t, referenced[id], "situationId %q must resolve to a situation reference", id)
++		}
++	}
++	// The alert names a route but no agency, so its ID is scoped to the agency
++	// the handler resolved the route under.
++	require.Contains(t, emitted, "25_test-alert-trips-for-route",
++		"expected the seeded alert to surface as a situationId")
++}
++
+ // TestTripsForRouteHandler_BlockSequence_AdjacentTripReferences verifies that
+ // schedule.previousTripId and schedule.nextTripId trips â€” which are not part
+ // of the handler's fetched trips â€” are fully populated in references.trips
+@@ -1276,7 +1323,11 @@ func TestBuildTripReferences_FetchesUnprefetchedTrips(t *testing.T) {
+ 		},
+ 	}
+ 
+-	references := buildTripReferences(api, ctx, true, entries, nil, []gtfsdb.Trip{preFetchedTrip}, nil)
++	references := api.buildTripReferences(ctx, tripReferenceParams{
++		IncludeTrip:     true,
++		Trips:           entries,
++		PreFetchedTrips: []gtfsdb.Trip{preFetchedTrip},
++	})
+ 
+ 	refTrips := make(map[string]models.Trip)
+ 	for _, ref := range references.Trips {
+diff --git a/internal/restapi/trips_helper.go b/internal/restapi/trips_helper.go
+index 27a7688d..2833c4f5 100644
+--- a/internal/restapi/trips_helper.go
++++ b/internal/restapi/trips_helper.go
+@@ -19,6 +19,16 @@ import (
+ 	"maglev.onebusaway.org/internal/utils"
+ )
+ 
++// tripStatusExtras carries what BuildTripStatus resolved on the way to the
++// status, so a caller needing the same values does not query for them again.
++//
++// snapshot may be nil (no live vehicle, no in-range block, etc.); callers
++// should handle that case.
++type tripStatusExtras struct {
++	snapshot   *scheduledBlockSnapshot
++	situations []situationRef
++}
++
+ // BuildTripStatus builds a TripStatus for the given trip.
+ //
+ // Pass a non-nil vehicle when it is already known (e.g. DUPLICATED trips, or when
+@@ -28,22 +38,19 @@ import (
+ // tripID is used for DB lookups (stop times, shapes, block sequence). For DUPLICATED
+ // trips whose synthetic ActiveTripID has no DB entry, set tripID to the base/static
+ // trip ID so the correct schedule data is used.
+-// BuildTripStatus returns the trip status and the snapshot it built along
+-// the way. Callers that also need per-stop block metrics (distanceFromStop,
+-// numberOfStopsAway) should reuse the returned snapshot instead of calling
+-// computeScheduledBlockSnapshot a second time â€” the amplification matters
+-// for the plural arrivals-and-departures endpoint which is called
+-// per-arrival-row across wide time windows.
+ //
+-// Snapshot may be nil (no live vehicle, no in-range block, etc.); callers
+-// should handle that case.
++// It also returns the intermediate results it built along the way. Callers
++// needing per-stop block metrics (distanceFromStop, numberOfStopsAway) or the
++// trip's situations should reuse those instead of resolving them a second time â€”
++// the amplification matters for the plural arrivals-and-departures endpoint
++// which is called per-arrival-row across wide time windows.
+ func (api *RestAPI) BuildTripStatus(
+ 	ctx context.Context,
+ 	agencyID, tripID string,
+ 	vehicle *gtfs.Vehicle,
+ 	serviceDate time.Time,
+ 	currentTime time.Time,
+-) (*models.TripStatus, *scheduledBlockSnapshot, error) {
++) (*models.TripStatus, *tripStatusExtras, error) {
+ 	if vehicle == nil {
+ 		vehicle = api.GtfsManager.GetVehicleForTrip(ctx, tripID)
+ 	}
+@@ -53,7 +60,8 @@ func (api *RestAPI) BuildTripStatus(
+ 	status := models.NewTripStatus()
+ 	status.ActiveTripID = utils.FormCombinedID(agencyID, tripID)
+ 	status.ServiceDate = models.NewModelTime(sdMidnight)
+-	status.SituationIDs = api.GetSituationIDsForTrip(ctx, tripID)
++	extras := &tripStatusExtras{situations: api.situationRefsForTrip(ctx, tripID)}
++	status.SituationIDs = situationIDsFromRefs(extras.situations)
+ 	// OccupancyCapacity and OccupancyCount default to 0 when no data is available.
+ 
+ 	// Computed up front (independent of vehicle/stop-time/shape data below) so
+@@ -92,12 +100,12 @@ func (api *RestAPI) BuildTripStatus(
+ 	if status.Status == "CANCELED" {
+ 		status.Predicted = vehicle != nil && !defaultStaleDetector.Check(vehicle, currentTime)
+ 		status.Scheduled = !status.Predicted
+-		return status, nil, nil
++		return status, extras, nil
+ 	}
+ 
+ 	_, activeTripRawID, err := utils.ExtractAgencyIDAndCodeID(status.ActiveTripID)
+ 	if err != nil {
+-		return status, nil, err
++		return status, extras, err
+ 	}
+ 
+ 	// Determine which trip ID to use for DB lookups (stop times, shapes, etc.).
+@@ -354,7 +362,8 @@ func (api *RestAPI) BuildTripStatus(
+ 		}
+ 	}
+ 
+-	return status, snap, nil
++	extras.snapshot = snap
++	return status, extras, nil
+ }
+ 
+ func (api *RestAPI) BuildTripSchedule(ctx context.Context, agencyID string, serviceDate time.Time, trip *gtfsdb.Trip, loc *time.Location) (*models.Schedule, error) {
+@@ -818,7 +827,10 @@ func distanceToLineSegment(px, py, x1, y1, x2, y2 float64) (distance, ratio floa
+ 	return d, r
+ }
+ 
+-func (api *RestAPI) GetSituationIDsForTrip(ctx context.Context, tripID string) []string {
++// situationRefsForTrip resolves the alerts affecting a trip and pairs each with
++// the situation ID that refers to it, so a caller needing both the entry IDs and
++// the situation references gets them from one lookup.
++func (api *RestAPI) situationRefsForTrip(ctx context.Context, tripID string) []situationRef {
+ 	var routeID string
+ 	var agencyID string
+ 
+@@ -844,21 +856,7 @@ func (api *RestAPI) GetSituationIDsForTrip(ctx context.Context, tripID string) [
+ 		}
+ 	}
+ 
+-	alerts := api.GtfsManager.GetAlertsByIDs(tripID, routeID, agencyID)
+-
+-	situationIDs := []string{}
+-	for _, alert := range alerts {
+-		if alert.ID == "" {
+-			continue
+-		}
+-		if agencyID != "" {
+-			situationIDs = append(situationIDs, utils.FormCombinedID(agencyID, alert.ID))
+-		} else {
+-			situationIDs = append(situationIDs, alert.ID)
+-		}
+-	}
+-
+-	return situationIDs
++	return situationRefsFromAlerts(api.GtfsManager.GetAlertsByIDs(tripID, routeID, agencyID), agencyID)
+ }
+ 
+ func (api *RestAPI) calculateOffsetForStop(

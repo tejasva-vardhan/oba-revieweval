@@ -1,0 +1,14 @@
+diff --git a/internal/webui/debug_index_handler.go b/internal/webui/debug_index_handler.go
+index 8d600dc1..e4387e1a 100644
+--- a/internal/webui/debug_index_handler.go
++++ b/internal/webui/debug_index_handler.go
+@@ -47,6 +47,9 @@ func (webUI *WebUI) debugIndexHandler(w http.ResponseWriter, r *http.Request) {
+ 	var data interface{}
+ 	var title string
+ 
++	webUI.GtfsManager.RLock()
++	defer webUI.GtfsManager.RUnlock()
++
+ 	staticData := webUI.GtfsManager.GetStaticData()
+ 
+ 	switch dataType {

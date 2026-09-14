@@ -1,0 +1,32 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+457,3838651608,review_body,aaronbrethorst,human,false,false,true,false,"Hey Tejasva, good catch on the missing read lock -- `FindAgency()` and `RoutesForAgencyID()` both document ""IMPORTANT: Caller must hold manager.RLock() before calling this method"", and this handler wasn't complying. The fix follows the exact pattern from `vehiclesForAgencyHandler` and is correct. One small thing before we merge:
+
+## Fit and Finish
+
+### 1. Remove the redundant `ValidateID` call (`routes_for_agency_handler.go:12-15`)
+
+This handler is registered via `withID()` in `routes.go:81`, which wraps it with `ValidateIDMiddleware`. That middleware already calls `utils.ValidateID(id)` and returns a 400 if validation fails -- the handler only runs with a pre-validated ID from `GetIDFromContext`. The `ValidateID` call inside the handler is harmless but redundant, and no other handler in the codebase does this (including `vehiclesForAgencyHandler`, which is the pattern you referenced):
+
+```go
+func (api *RestAPI) routesForAgencyHandler(w http.ResponseWriter, r *http.Request) {
+	id, _ := utils.GetIDFromContext(r.Context())
+
+	api.GtfsManager.RLock()
+	defer api.GtfsManager.RUnlock()
+
+	agency := api.GtfsManager.FindAgency(id)
+```
+
+Just remove the `ValidateID` block (lines 12-15 in the diff) to keep the handler consistent with the rest of the codebase.
+
+## Strengths
+
+- **Correct diagnosis**: The data race documented in #455 is real, and the fix is exactly right -- acquire `RLock()` before accessing in-memory GTFS data, release via `defer`.
+- **Clean single commit**: One logical change, one commit, clear commit message.
+- **CI green**: Lint and tests pass on both platforms.
+
+## Recommended Action
+
+Remove the redundant `ValidateID` block, amend the commit, and this is ready to merge.
+",,,457-002,false
+457,3843869507,review_body,aaronbrethorst,human,false,false,true,false,"Tejasva, this looks good — the redundant `ValidateID` call is removed and the diff is now just the three lines that matter. The `RLock()`/`defer RUnlock()` placement before `FindAgency()` correctly follows the documented contract and matches the pattern in `vehiclesForAgencyHandler`. Tests pass, lint is clean. Merging.",,,457-003,false

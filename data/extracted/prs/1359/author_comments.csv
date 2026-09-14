@@ -1,0 +1,38 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1359,5350666148,issue,ARCoder181105,human,true,false,false,false,"On opening a separate issue for the default radius: #1227 already tracks this. I closed it on 2026-08-01 accepting the global constant, and @burma-shave noted the deviation would instead be recorded in the spec's Implementation Decisions section. That entry never landed — the live wiki page still states 500m, and its Implementation Decisions section only covers `query` matching.
+
+So it is either reopening #1227 or filing a new issue that supersedes it. Happy to do whichever you prefer.
+
+Blast radius for whichever lands: `models.DefaultSearchRadiusInMeters` is the `BoundsFromParams` fallback (`internal/gtfs/location_params.go:30`), so changing it to 500 also moves the default search area for stops-for-location and trips-for-location, along with their fixture tests.",,,1359-004,false
+1359,5352814402,issue,ARCoder181105,human,true,false,false,false,"Pushed two commits addressing this.
+
+`TestRoutesForLocationDefaultRadiusMatches600Meters` → renamed to
+`TestRoutesForLocationDefaultRadiusMatchesCurrentConstant`, comment now says
+explicitly this pins current behavior (models.DefaultSearchRadiusInMeters),
+not the spec, with the 500m wiki/hosted-Java value noted and a link to #1227.
+Assertions unchanged — verified locally that flipping the constant to 500
+makes the test fail, so it's not vacuous. (1c6edbe)
+
+Folded the three maxCount tests into one table-driven test, each case
+carrying the expected fieldErrors message. (2672197)
+
+On ""the spec quotes"" wording — one correction: the wiki page does quote
+""must be greater than zero"" in extension 1a, so the comment wasn't wrong,
+just ambiguous about which spec. Reworded to name the wiki page directly;
+testdata/openapi.yml is the one with no fieldErrors schema.
+
+Also flagged, separately: TestRoutesForLocationHandlerSituationReferences
+pins references.situations being populated here, but the wiki says that
+array is empty for this endpoint and has no Implementation Decisions entry
+for it. Comment now notes it's current behavior from 4e09c1c (applied across
+all non-trip handlers), not something the spec documents. Left the
+assertions as-is per the same reasoning as the radius test.
+
+On the issue: commented separately that #1227 already tracks the 600-vs-500
+gap, closed 2026-08-01 as an accepted deviation with a note that it'd be
+recorded in Implementation Decisions — never happened. Asked there whether
+to reopen or file a new one.
+
+#1357 and #1358 are merged, so this is genuinely tests-only now.",,,1359-005,false
+1359,3819489698,inline,ARCoder181105,human,true,false,false,false,I think this is stale ,internal/restapi/routes_for_location_handler_test.go,,1359-009,false
+1359,4980140755,review_body,ARCoder181105,human,true,false,false,true,,,,1359-015,false

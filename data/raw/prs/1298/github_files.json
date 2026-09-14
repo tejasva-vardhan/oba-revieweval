@@ -1,0 +1,18 @@
+[
+  {
+    "filename": "internal/gtfs/gtfs_manager.go",
+    "status": "modified",
+    "additions": 10,
+    "deletions": 0,
+    "previous_filename": null,
+    "source": "github_files_api"
+  },
+  {
+    "filename": "internal/restapi/trips_for_route_handler_test.go",
+    "status": "modified",
+    "additions": 124,
+    "deletions": 5,
+    "previous_filename": null,
+    "source": "github_files_api"
+  }
+]

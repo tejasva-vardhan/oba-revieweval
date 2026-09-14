@@ -1,0 +1,18 @@
+[
+  {
+    "filename": "internal/restapi/arrivals_and_departures_for_stop_handler.go",
+    "status": "modified",
+    "additions": 4,
+    "deletions": 2,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/arrivals_and_departures_for_stop_handler_test.go",
+    "status": "modified",
+    "additions": 55,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  }
+]

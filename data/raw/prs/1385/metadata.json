@@ -1,0 +1,34 @@
+{
+  "html_url": "https://github.com/OneBusAway/maglev/pull/1385",
+  "merge_sha": "c8269c4b4a04d65e73494af7b74e4a8aa9a03f87",
+  "title": "Validate schedule-for-stop date before the agency lookup",
+  "review_count": 3,
+  "pr_number": 1385,
+  "state": "closed",
+  "changed_files": [
+    "CONTRIBUTING.md",
+    "internal/restapi/schedule_for_stop_handler.go",
+    "internal/restapi/schedule_for_stop_handler_test.go",
+    "internal/utils/validation.go",
+    "internal/utils/validation_test.go"
+  ],
+  "change_kind": "code",
+  "merged": true,
+  "changed_file_count": 5,
+  "author_type": "User",
+  "repo": "OneBusAway/maglev",
+  "author": "ARCoder181105",
+  "export_version": 1,
+  "collected_at": "2026-09-14",
+  "source": "GitHub REST API",
+  "diff_mode": "merge_parents_three_dot",
+  "diff_base_sha": "d5e5408c5c652e7bf170782c771f8a4c1055ff09",
+  "diff_head_sha": "3d66de08d9671381a25a3b1735e5a499e7c65bc0",
+  "merge_parents": [
+    "d5e5408c5c652e7bf170782c771f8a4c1055ff09",
+    "3d66de08d9671381a25a3b1735e5a499e7c65bc0"
+  ],
+  "stratum": "api_gtfs",
+  "diff_anchored_to_merge_sha": true,
+  "github_file_count": 5
+}

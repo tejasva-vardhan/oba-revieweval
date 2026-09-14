@@ -1,0 +1,73 @@
+{
+  "issue_comments": [
+    {
+      "id": 5587156116,
+      "source": "issue",
+      "login": "coderabbitai[bot]",
+      "user_type": "Bot",
+      "body": " \n \n\n \n\n \n \n\n> [!WARNING]\n> ## Review limit reached\n> \n> **Next included review available in 21 minutes.**\n> \n> [Check out review usage here](https://app.coderabbit.ai/dashboard/review-capacity?orgId=4ffed26d-49e5-47e7-b540-a16829c073be).\n> \n> \n> View limit details \n> \n> **Limit details:** You\u2019ve used the included review currently available.\n> \n> You've used all free OSS reviews for now. Wait for the free limit to reset to keep reviewing this public repository.\n> \n> [Learn how review limits work](https://docs.coderabbit.ai/management/plans#rate-limits).\n> \n> **Review configuration:**\n> \n> \n> \u2699\ufe0f Run configuration \n> \n> **Configuration used**: Repository UI\n> \n> **Review profile**: ASSERTIVE\n> \n> **Plan**: Advanced\n> \n> **Run ID**: `298ddc55-5688-4395-aa56-f82027489317`\n> \n> \n> \n> \n> \ud83d\udce5 Commits \n> \n> Reviewing files that changed from the base of the PR and between 1d2d2be7f6d14e440b373488d2040ed5db69d1c7 and 55309631d1e96410c6d348ac989d9b359d80dd5e.\n> \n> \n> \n> \n> \ud83d\udcd2 Files selected for processing (1) \n> \n> * `internal/restapi/block_handler_test.go`\n> \n> \n> \n> \n\n \n\n \n\nNo actionable comments were generated in the recent review. \ud83c\udf89\n\n \n \u2139\ufe0f Recent review info \n\n \n \u2699\ufe0f Run configuration \n\n**Configuration used**: Repository UI\n\n**Review profile**: ASSERTIVE\n\n**Plan**: Advanced\n\n**Run ID**: `4811da66-da7d-4dff-901a-bac32d3bf8d3`\n\n \n\n \n \ud83d\udce5 Commits \n\nReviewing files that changed from the base of the PR and between f099da2edb1d0bb30e0ccef85b2d994e9daaa55d and 1d2d2be7f6d14e440b373488d2040ed5db69d1c7.\n\n \n\n \n \ud83d\udcd2 Files selected for processing (1) \n\n* `internal/restapi/block_handler_test.go`\n\n \n\n**Included review availability:** Your plan provides up to 1 included review per hour; 0 remain after this review.\n\n \n\n---\n\n\n\n \n \n\n \n \ud83d\udcdd Walkthrough \n\n## Walkthrough\n\nThe block handler now resets `blockDistance` for each service configuration. A regression test verifies that each configuration starts at zero and accumulates distance independently.\n\n### Changes\n\n**Block distance reset**\n\n|Layer / File(s)|Summary|\n|---|---|\n|**Reset distance and validate configuration boundaries** `internal/restapi/block_handler.go`, `internal/restapi/block_handler_test.go`|`blockDistance` is initialized inside the service-ID loop. The regression test verifies zero distance at the first stop and accumulation within each configuration.|\n\n \n**Priority:** \u2796 Normal\n\n\n\n**Estimated code review effort:** 1 (Trivial) | ~5 minutes\n\n \n**Severity of issue fixed:** Medium\n \n\n \n**Merge Risk:** _\u26aa Minimal_ \u00b7 up to `1d2d2`\n \n\nBlock-stop distances now start at zero for each independent configuration while continuing to accumulate within that configuration. The targeted behavior is covered through the API route, with no remaining concrete merge-blocking risk.\n \n\n**Suggested reviewers:** `omlahore`\n\n \n\n \n \n\n \n \ud83d\udea5 Pre-merge checks | \u2705 4 | \u274c 1 \n\n### \u274c Failed checks (1 warning)\n\n| Check name | Status | Explanation | Resolution |\n| :----------------: | :--------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------- |\n| Docstring Coverage | \u26a0\ufe0f Warning | Docstring coverage is 0.00% which is insufficient. The required threshold is 80.00%. Docstring coverage is scoped to functions touched by this diff. Analyzed 4 functions across 2 files. | Write docstrings for the functions missing them to satisfy the coverage threshold. |\n\n \n \u2705 Passed checks (4 passed) \n\n| Check name | Status | Explanation |\n| :------------------------: | :------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |\n| Description Check | \u2705 Passed | Check skipped - CodeRabbit\u2019s high-level summary is enabled. |\n| Title check | \u2705 Passed | The title clearly describes the primary change: resetting distanceAlongBlock between block configurations. |\n| Linked Issues check | \u2705 Passed | The change satisfies issue `#1427`. It scopes blockDistance to each service configuration and adds a regression test for reset and within-configuration accumulation. It does not address unrelated BlockS\u2026 |\n| Out of Scope Changes check | \u2705 Passed | All changes support issue `#1427`. The implementation change and regression test are limited to resetting distanceAlongBlock between configurations. |\n\n \n\n \n\n \n \n\n---\n\nThanks for using [CodeRabbit](https://coderabbit.ai?utm_source=oss&utm_medium=github&utm_campaign=OneBusAway/maglev&utm_content=1428)! It's free for OSS, and your support helps us grow. If you like it, consider giving us a shout-out.\n\n \n \u2764\ufe0f Share \n\n- [X](https://twitter.com/intent/tweet?text=I%20just%20used%20%40coderabbitai%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20the%20proprietary%20code.%20Check%20it%20out%3A&url=https%3A//coderabbit.ai)\n- [Mastodon](https://mastodon.social/share?text=I%20just%20used%20%40coderabbitai%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20the%20proprietary%20code.%20Check%20it%20out%3A%20https%3A%2F%2Fcoderabbit.ai)\n- [Reddit](https://www.reddit.com/submit?title=Great%20tool%20for%20code%20review%20-%20CodeRabbit&text=I%20just%20used%20CodeRabbit%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20proprietary%20code.%20Check%20it%20out%3A%20https%3A//coderabbit.ai)\n- [LinkedIn](https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fcoderabbit.ai&mini=true&title=Great%20tool%20for%20code%20review%20-%20CodeRabbit&summary=I%20just%20used%20CodeRabbit%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20proprietary%20code)\n\n \n\n\n Comment `@coderabbitai help` to get the list of available commands. \n\n ",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-09-08T14:56:16Z"
+    },
+    {
+      "id": 5599609856,
+      "source": "issue",
+      "login": "priyanshu7739410",
+      "user_type": "User",
+      "body": "Thanks for the review! I\u2019ve updated the regression test to use the existing 25_1 fixture and exercise the API through callAPIHandler, as suggested. It now verifies both the reset between configurations and accumulation within each configuration. The update is pushed to the PR.",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-09-09T09:29:04Z"
+    },
+    {
+      "id": 5599665947,
+      "source": "issue",
+      "login": "omlahore",
+      "user_type": "User",
+      "body": "Test reads right to me now. I dropped the unused import locally and ran it against the merge base and it fails there with `expected: 0, actual: 433750.7712378005` on the config 1 assertion, so it still catches the thing it is meant to catch.\n\nThe build is red though. `gtfsdb` is still imported at the top of `block_handler_test.go` and nothing uses it now that the synthetic rows are gone, so `go vet` fails under both tag sets and both Test jobs are failing on it. SonarCloud going green threw me for a second, but it does not compile the Go.\n",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-09-09T09:33:38Z"
+    },
+    {
+      "id": 5600105393,
+      "source": "issue",
+      "login": "sonarqubecloud[bot]",
+      "user_type": "Bot",
+      "body": "## [![Quality Gate Passed](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/checks/QualityGateBadge/qg-passed-20px.png 'Quality Gate Passed')](https://sonarcloud.io/dashboard?id=OneBusAway_maglev&pullRequest=1428) **Quality Gate passed** \nIssues \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0 New issues](https://sonarcloud.io/project/issues?id=OneBusAway_maglev&pullRequest=1428&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true) \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/accepted-16px.png '') [0 Accepted issues](https://sonarcloud.io/project/issues?id=OneBusAway_maglev&pullRequest=1428&issueStatuses=ACCEPTED)\n\nMeasures \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0 Security Hotspots](https://sonarcloud.io/project/security_hotspots?id=OneBusAway_maglev&pullRequest=1428&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true) \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0.0% Coverage on New Code](https://sonarcloud.io/component_measures?id=OneBusAway_maglev&pullRequest=1428&metric=new_coverage&view=list) \n![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0.0% Duplication on New Code](https://sonarcloud.io/component_measures?id=OneBusAway_maglev&pullRequest=1428&metric=new_duplicated_lines_density&view=list) \n \n \n[See analysis details on SonarQube Cloud](https://sonarcloud.io/dashboard?id=OneBusAway_maglev&pullRequest=1428)\n\n",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-09-09T10:06:10Z"
+    },
+    {
+      "id": 5600203358,
+      "source": "issue",
+      "login": "priyanshu7739410",
+      "user_type": "User",
+      "body": "Thanks! I removed the unused gtfsdb import and pushed the cleanup in 55309631.\r\n\r\nThe updated regression test passes, and all CI checks are now green.",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-09-09T10:14:04Z"
+    }
+  ],
+  "inline_comments": [],
+  "review_bodies": [
+    {
+      "id": 5151390767,
+      "source": "review_body",
+      "login": "omlahore",
+      "user_type": "User",
+      "body": "Fix looks right to me. I ran the new test against the merge base and it fails there on the config 1 assertion, so it is a real regression test and not just a passing one.\n\nOne thing I noticed while checking it. The bug is visible through the fixture already, and on `25_1`, which the tests above it are using. On the merge base `/api/where/block/25_1` returns `DistanceAlongBlock` of 0 for the first configuration and 433750.77 for the first stop of the second one, and both go to 0 with your change. So I think an assertion through `callAPIHandler` would cover the same thing while also going through the real `GetBlockDetails` row shape, which the hand built rows kinda skip since they leave the arrival and departure fields at zero.\n",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-09-09T07:58:19Z"
+    }
+  ]
+}

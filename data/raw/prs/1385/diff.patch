@@ -1,0 +1,225 @@
+diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md
+index 4d0c8667..027c6008 100644
+--- a/CONTRIBUTING.md
++++ b/CONTRIBUTING.md
+@@ -66,7 +66,7 @@ Use `createTestApi(t)` together with `callAPIHandler`/`serveApiAndRetrieveEndpoi
+ Before writing new logic, check whether it already exists â€” this is the single most common category of review comment. The codebase organizes shared helpers by category rather than by handler:
+ 
+ - **Parameter parsing** (`internal/utils/api.go`) â€” functions named `Parse*`, returning a parsed value plus field errors (e.g. `ParseFloatParam`, `ParseTimeParameter`, `ParseDate`).
+-- **Validation** (`internal/utils/validation.go`) â€” functions named `Validate*`, returning just an error (e.g. `ValidateLatitude`, `ValidateDate`). Something that parses *and* returns a value belongs in `api.go`; something that only checks validity belongs in `validation.go`.
++- **Validation** (`internal/utils/validation.go`) â€” functions named `Validate*`, returning just an error (e.g. `ValidateLatitude`, `ValidateServiceDate`). Something that parses *and* returns a value belongs in `api.go`; something that only checks validity belongs in `validation.go`.
+ - **Handler-level ID/location extraction** (`internal/restapi/id_helpers.go`, `location_params.go`) â€” pulling and validating IDs or lat/lon/radius straight off `*http.Request`.
+ - **Reference building** (`internal/restapi/reference_utils.go`) â€” building the `Agency`/`Route`/`Situation` reference blocks used in list/entry responses, plus `ShouldIncludeReferences`.
+ - **Sorting and comparison** (`internal/utils/sort.go`, `string_utils.go`) â€” e.g. `NaturalCompare`.
+diff --git a/internal/restapi/schedule_for_stop_handler.go b/internal/restapi/schedule_for_stop_handler.go
+index 0c7b6ccf..cc8f86c5 100644
+--- a/internal/restapi/schedule_for_stop_handler.go
++++ b/internal/restapi/schedule_for_stop_handler.go
+@@ -30,6 +30,16 @@ func (api *RestAPI) scheduleForStopHandler(w http.ResponseWriter, r *http.Reques
+ 	// Get the date parameter or use current date
+ 	dateParam := r.URL.Query().Get("date")
+ 
++	// An unparseable date is a field error even when the ID resolves to nothing, so it has
++	// to be caught before the agency lookup below. Resolving the date to a service date
++	// needs that agency's timezone, so the parse itself stays where it is.
++	if dateParam != "" {
++		if err := utils.ValidateServiceDate(dateParam); err != nil {
++			api.validationErrorResponse(w, r, map[string][]string{"date": {err.Error()}})
++			return
++		}
++	}
++
+ 	agency, err := api.GtfsManager.GtfsDB.Queries.GetAgency(ctx, agencyID)
+ 	if err != nil {
+ 		api.sendNotFound(w, r)
+@@ -46,15 +56,8 @@ func (api *RestAPI) scheduleForStopHandler(w http.ResponseWriter, r *http.Reques
+ 	var responseDate int64 // Stores the exact timestamp for the JSON response
+ 
+ 	if dateParam != "" {
+-		var err error
+-		startOfDay, err = utils.ParseDate(dateParam, loc)
+-		if err != nil {
+-			fieldErrors := map[string][]string{
+-				"date": {err.Error()},
+-			}
+-			api.validationErrorResponse(w, r, fieldErrors)
+-			return
+-		}
++		// dateParam was already validated above; ParseDate cannot fail here.
++		startOfDay, _ = utils.ParseDate(dateParam, loc)
+ 
+ 		// Echo the exact Unix timestamp if provided, else use midnight
+ 		if unixMillis, err := strconv.ParseInt(dateParam, 10, 64); err == nil {
+diff --git a/internal/restapi/schedule_for_stop_handler_test.go b/internal/restapi/schedule_for_stop_handler_test.go
+index 70f78bf4..27662e49 100644
+--- a/internal/restapi/schedule_for_stop_handler_test.go
++++ b/internal/restapi/schedule_for_stop_handler_test.go
+@@ -347,6 +347,68 @@ func TestScheduleForStopHandlerInvalidDateFormat(t *testing.T) {
+ 	}
+ }
+ 
++func TestScheduleForStopHandlerDateValidationPrecedesLookup(t *testing.T) {
++	api := createTestApi(t)
++	defer api.Shutdown()
++
++	knownStopID := utils.FormCombinedID(mustGetAgencies(t, api)[0].ID, mustGetStop(t, api).ID)
++
++	tests := []struct {
++		name             string
++		stopID           string
++		date             string
++		expectedStatus   int
++		expectFieldError bool
++	}{
++		{
++			name:             "unknown agency with an invalid date",
++			stopID:           "99_1001",
++			date:             "garbage",
++			expectedStatus:   http.StatusBadRequest,
++			expectFieldError: true,
++		},
++		{
++			name:             "known agency with an invalid date",
++			stopID:           knownStopID,
++			date:             "garbage",
++			expectedStatus:   http.StatusBadRequest,
++			expectFieldError: true,
++		},
++		{
++			name:           "unknown agency with a valid date",
++			stopID:         "99_1001",
++			date:           "2025-06-12",
++			expectedStatus: http.StatusNotFound,
++		},
++		{
++			name:           "unknown stop with a valid date",
++			stopID:         "25_9999999",
++			date:           "2025-06-12",
++			expectedStatus: http.StatusNotFound,
++		},
++	}
++
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			endpoint := "/api/where/schedule-for-stop/" + tt.stopID + ".json?key=org.onebusaway.iphone&date=" + tt.date
++			resp, model := serveApiAndRetrieveEndpoint(t, api, endpoint)
++
++			assert.Equal(t, tt.expectedStatus, resp.StatusCode)
++			assert.Equal(t, tt.expectedStatus, model.Code)
++
++			if !tt.expectFieldError {
++				return
++			}
++
++			data, ok := model.Data.(map[string]any)
++			require.True(t, ok)
++			fieldErrors, ok := data["fieldErrors"].(map[string]any)
++			require.True(t, ok)
++			assert.NotEmpty(t, fieldErrors["date"])
++		})
++	}
++}
++
+ func TestScheduleForStopHandlerScheduleContent(t *testing.T) {
+ 	api := createTestApi(t)
+ 	defer api.Shutdown()
+diff --git a/internal/utils/validation.go b/internal/utils/validation.go
+index 34c9142c..c144f5ed 100644
+--- a/internal/utils/validation.go
++++ b/internal/utils/validation.go
+@@ -91,20 +91,12 @@ func ValidateSpan(span float64) error {
+ 	return nil
+ }
+ 
+-// ValidateDate validates date strings in YYYY-MM-DD format
+-func ValidateDate(date string) error {
+-	// Empty dates are allowed (will default to current date)
+-	if date == "" {
+-		return nil
+-	}
+-
+-	// Parse date in YYYY-MM-DD format
+-	_, err := time.Parse("2006-01-02", date)
+-	if err != nil {
+-		return errors.New("invalid date format, use YYYY-MM-DD")
+-	}
+-
+-	return nil
++// ValidateServiceDate reports whether a service date parameter is parseable, in either
++// of the forms ParseDate accepts. Handlers use it to reject a malformed date before
++// looking up the agency whose timezone ParseDate then resolves the date against.
++func ValidateServiceDate(date string) error {
++	_, err := ParseDate(date, time.UTC)
++	return err
+ }
+ 
+ // SanitizeInput removes HTML tags and other potentially dangerous content
+diff --git a/internal/utils/validation_test.go b/internal/utils/validation_test.go
+index e3ed573c..59e150b3 100644
+--- a/internal/utils/validation_test.go
++++ b/internal/utils/validation_test.go
+@@ -415,64 +415,3 @@ func TestSanitizeInput(t *testing.T) {
+ 		})
+ 	}
+ }
+-
+-func TestValidateDate(t *testing.T) {
+-	tests := []struct {
+-		name    string
+-		date    string
+-		wantErr bool
+-		errMsg  string
+-	}{
+-		{
+-			name:    "valid date",
+-			date:    "2023-12-25",
+-			wantErr: false,
+-		},
+-		{
+-			name:    "valid leap year date",
+-			date:    "2024-02-29",
+-			wantErr: false,
+-		},
+-		{
+-			name:    "empty date is valid",
+-			date:    "",
+-			wantErr: false,
+-		},
+-		{
+-			name:    "invalid date format",
+-			date:    "12/25/2023",
+-			wantErr: true,
+-			errMsg:  "invalid date format, use YYYY-MM-DD",
+-		},
+-		{
+-			name:    "invalid date",
+-			date:    "2023-13-01",
+-			wantErr: true,
+-			errMsg:  "invalid date format, use YYYY-MM-DD",
+-		},
+-		{
+-			name:    "invalid leap year date",
+-			date:    "2023-02-29",
+-			wantErr: true,
+-			errMsg:  "invalid date format, use YYYY-MM-DD",
+-		},
+-		{
+-			name:    "date with invalid characters",
+-			date:    "2023-01-01<script>",
+-			wantErr: true,
+-			errMsg:  "invalid date format, use YYYY-MM-DD",
+-		},
+-	}
+-
+-	for _, tt := range tests {
+-		t.Run(tt.name, func(t *testing.T) {
+-			err := ValidateDate(tt.date)
+-			if tt.wantErr {
+-				assert.Error(t, err, "ValidateDate should return error for invalid date")
+-				assert.Contains(t, err.Error(), tt.errMsg, "Error message should contain expected text")
+-			} else {
+-				assert.NoError(t, err, "ValidateDate should not return error for valid date")
+-			}
+-		})
+-	}
+-}

@@ -1,0 +1,80 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+372,3877616578,issue,ARCoder181105,human,true,false,false,false,"The test are passing perfectly
+<img width=""1139"" height=""359"" alt=""image"" src=""https://github.com/user-attachments/assets/09f6bdfe-1653-4ca9-845b-4240ae266975"" />
+
+",,,372-001,false
+372,3811930061,review_body,aaronbrethorst,human,false,false,true,false,"Hey Aditya, nice work on this performance optimization. The map-based lookup for `RoutesForAgencyID` is a clean and effective improvement, and I appreciate that you also caught and fixed the data race in `AdvancedDirectionCalculator` along the way. The test coverage — especially the concurrent access test — shows good attention to thread safety. Before we can merge this, I will need you to make a couple changes:
+
+## Important
+
+1. **Squash into a single commit.** The branch has 3 commits (`fa8412f`, `f9d0652`, `0beb643`) that should be squashed into one clean commit. If you're not sure how to do this, check out this blog post I wrote: https://www.brethorsting.com/blog/2026/01/git-rebase-for-the-terrified/
+
+## Fit and Finish
+
+2. **Changelog-style comments on the mutex additions** (`advanced_direction_calculator.go:56`, `72`). The comments `// Mutex protection added for race safety` describe *why you changed the code*, not *what the code does*. Future readers won't have the PR context. Consider changing to something like `// Protect cache assignment from concurrent readers` or simply removing them — the `cacheMutex.Lock()` call is self-documenting.
+
+Thanks again, and I look forward to merging this change.
+",,,372-002,false
+372,3836860979,review_body,aaronbrethorst,human,false,false,true,false,"Hey Aditya, the core optimization and the data race fix both look solid — the `buildRouteIndex` approach is clean, both `setStaticGTFS` and `ForceUpdate` rebuild the index correctly, and the concurrent access test is a nice addition. The squash and rebase is done too. One item from the first round still needs a quick pass, though.
+
+## Previous Feedback Status
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | Squash into a single commit | Addressed |
+| 2 | Changelog-style comments on mutex additions | **Not addressed** |
+
+## Important
+
+1. **Changelog-style comments are still present — and multiplied** (`advanced_direction_calculator.go`). The first round asked you to rephrase or remove `// Mutex protection added for race safety` because it describes *why you changed the code*, not *what the code does*. That exact comment is still on lines 56 and 72 in the diff. Two new instances of the same pattern were also added:
+
+   - `// Mutex protection: Use RLock (Read Lock) for checking the cache` (in `computeFromShapes`)
+   - `// Mutex protection: Use RLock for checking the cache` (in `calculateOrientationAtStop`)
+
+   All four should either be removed (the `Lock()`/`RLock()` calls are self-documenting) or reworded to describe *what* the code does. For example:
+
+   ```go
+   // Protect cache from concurrent readers during assignment
+   adc.cacheMutex.Lock()
+   ```
+
+   Or simply delete all four comments — `cacheMutex.Lock()` and `cacheMutex.RLock()` speak for themselves.
+
+## Fit and Finish
+
+2. **Self-explanatory comment in `RoutesForAgencyID`** (`gtfs_manager.go`): `// Return empty slice if no routes found for this agency` restates the `return []*gtfs.Route{}` line. Safe to remove.
+
+3. **Comments in `buildRouteIndex`** (`static.go`): `// Pre-allocate based on agency count to avoid resizing` and `// Use pointer to avoid duplication` are accurate but slightly over-explain idiomatic Go patterns. Consider removing for brevity.
+
+## Strengths
+
+- The `buildRouteIndex` function follows the established `buildLookupMaps` pattern perfectly — same style, same location, easy to maintain.
+- Both data paths (`setStaticGTFS` for initial load and `ForceUpdate` for hot-swap) correctly rebuild the index.
+- The logging addition (`slog.Int(""route_index_agencies"", ...)`) is a nice operational touch.
+- `TestRoutesForAgencyID_ConcurrentAccess` properly exercises reader/writer contention with `setStaticGTFS`.
+- Adding `defer manager.Shutdown()` across existing tests is good housekeeping.
+- The benchmark is a welcome addition for tracking regression.
+
+## Recommended Action
+
+1. Remove or reword the four changelog-style comments (item 1)
+2. Consider the fit-and-finish items (items 2–3)
+3. Squash again after changes
+",,,372-003,false
+372,3838476457,review_body,aaronbrethorst,human,false,false,true,false,"Hey Aditya, thanks for taking the time to build this performance optimization for `RoutesForAgencyID`. The approach of pre-computing a `routesByAgencyID` index at load time is clean, and I especially appreciate that you integrated it into both `setStaticGTFS` and `ForceUpdate` so the index stays consistent across hot-swaps. The test hygiene improvements — adding `defer manager.Shutdown()`, proper `RLock()/RUnlock()`, and cleaning up stale comments — are a nice bonus. Before we can merge this, I will need you to make a couple changes:
+
+## Important
+
+1. **Benchmark uses a hardcoded relative path instead of a computed absolute path.** In `BenchmarkRoutesForAgencyID_MapLookup` (`internal/gtfs/gtfs_manager_test.go:536`), you use `""../../testdata/raba.zip""` while every other test in the file uses `models.GetFixturePath(t, ""raba.zip"")`. The hardcoded path is fragile — it breaks if the test is run from a different working directory. Since `GetFixturePath` currently takes `*testing.T` and benchmarks use `*testing.B`, you'll need to update `GetFixturePath` in `internal/models/test_helpers.go` to accept `testing.TB` (which is satisfied by both `*testing.T` and `*testing.B`). Then you can use `models.GetFixturePath(b, ""raba.zip"")` in the benchmark.
+
+2. **Concurrent access test uses `manager.staticMutex` directly instead of the public API.** In `TestRoutesForAgencyID_ConcurrentAccess` (`internal/gtfs/gtfs_manager_test.go:491-492`), the reader goroutines call `manager.staticMutex.RLock()` / `manager.staticMutex.RUnlock()` directly. This is inconsistent with the rest of the test file — for example, `TestRoutesForAgencyID_MapOptimization` uses `manager.RLock()` / `manager.RUnlock()`. Please switch to the public API for consistency.
+
+## Fit and Finish
+
+1. **Unnecessary locking in `TestRoutesForAgencyID_MapOptimization`.** The test acquires and releases `RLock` four separate times in sequence, but this is a single-threaded test with no concurrent writers. You could consolidate these into fewer lock regions. In particular, block 3 (lines 451-456) acquires `RLock` just to iterate over `publicRoutes`, which is a local variable — it doesn't access shared manager state, so no lock is needed there at all.
+
+Thanks again, and I look forward to merging this change.",,,372-004,false
+372,3838640779,review_body,aaronbrethorst,human,false,false,true,false,"Hey Aditya, every piece of feedback from the previous three rounds has been addressed — the changelog-style comments are gone, the benchmark uses `GetFixturePath` with the `testing.TB` interface, the concurrent test uses the public `manager.RLock()` API, and the test locking is properly consolidated. Clean work across the board.
+
+There's nothing left to change—this PR is ready to merge. The `routesByAgencyID` index is a well-executed optimization that follows the existing `buildLookupMaps` pattern perfectly, and the `AdvancedDirectionCalculator` race fix adds real safety with a minimal footprint.
+",,,372-005,false

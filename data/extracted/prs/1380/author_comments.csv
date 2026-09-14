@@ -1,0 +1,63 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1380,5430974583,issue,yash170603,human,true,false,false,false,"Hey @Ahmedhossamdev, thanks for the review! Here is the update on both items:
+
+### Format issue
+Fixed — removed the trailing blank line at end of `reference_utils_test.go` and added doc comments to all functions touched by this diff. CodeRabbit should re-scan and pass the 80% docstring threshold on the next run.
+
+### SonarQubeCloud 0.0% Coverage on New Code
+This is the standard result for **all** fork PRs — SonarCloud cannot read the `SONAR_TOKEN` secret from forks, so coverage data is never uploaded. You can verify this on every recently merged fork PR:
+
+- PR #1359 (merged) — `0.0% Coverage on New Code`
+- PR #1360 (merged) — `0.0% Coverage on New Code`
+
+The CI already generates `clean_profile.cov` correctly (`.github/workflows/go.yml:64-80`), and `sonar-project.properties` points to it. The scan simply never runs for fork PRs because `SONAR_CI_ANALYSIS_ENABLED` is `false` at line 41. Coverage is not blocking the quality gate.
+
+### CodeRabbit: collision test (same route ID across agencies)
+CodeRabbit suggested adding a test where agency A2 also has `route_id=r100`. This is **impossible** with the current schema — `routes.id` is `PRIMARY KEY`:
+
+```sql
+CREATE TABLE routes (
+    id TEXT PRIMARY KEY,        -- unique constraint
+    agency_id TEXT NOT NULL,    -- NOT NULL
+    FOREIGN KEY (agency_id) REFERENCES agencies(id)  -- FK enforced
+) STRICT;
+```
+
+I verified this against an in-memory SQLite instance:
+- `INSERT INTO routes VALUES('r100','A1',...)` — succeeds
+- `INSERT INTO routes VALUES('r100','A2',...)` — **`UNIQUE constraint failed: routes.id`**
+
+GTFS spec also mandates unique `route_id` values per feed. Two agencies cannot share the same `route_id` in a single feed.
+
+### CodeRabbit: empty AgencyID fallback test
+Also impossible — the schema enforces both `NOT NULL` and a foreign key:
+- `INSERT INTO routes VALUES('r','','...')` — **`FOREIGN KEY constraint failed`** (empty string is not a valid agency)
+- `INSERT INTO routes VALUES('r','NONEXISTENT',...)` — **`FOREIGN KEY constraint failed`**
+
+The empty-AgencyID fallback at `reference_utils.go:93-95` is defensive dead code — it can never be triggered through normal operation because the DB rejects it at insert time.
+
+### Summary
+- Format fixed
+- Docstrings added (83%+ coverage)
+- Tests cover all schema-possible edge cases
+- SonarQube 0.0% — standard for fork PRs, does not block merge
+",,,1380-004,false
+1380,5458691139,issue,yash170603,human,true,false,false,false,"@burma-shave , sure will pick this up and fix it",,,1380-005,false
+1380,5465646093,issue,yash170603,human,true,false,false,false,"Hey @burma-shave,  you're right that this was only half done. Pushed a fix.
+
+Now after stopsForAgencyHandler builds the route references, I loop through them and if a route belongs to a different agency than the one requested, I add that agency into references.agencies too (reused the appendRouteAgencyReference helper that's already used in trip_for_vehicle_handler.go, so it's not a new pattern).
+
+Also added an endpoint-level test like you asked — sets up a stop for A1 that's also served by an A2 route, hits the actual handler, and checks that every route in the response has its agency present in references.agencies. Not just checking the one example, it checks all of them generically.
+
+To be sure this actually does something (didn't want to just add a test that passes no matter what), I reverted the fix and reran it — it failed with basically the exact gap you described, route agency missing from the agencies list. Put the fix back, ran the whole test suite, all green.
+
+
+One thing — you said ""callers"" plural, I only fixed stopsForAgencyHandler since that's what the issue is about. stops_for_route_handler.go has the same problem though. Should I fix that here only? or a different fix to avoid polluting the pr.!
+
+Thanks",,,1380-006,false
+1380,5521343825,issue,yash170603,human,true,false,false,false,"@burma-shave , sure I will pick this up!
+",,,1380-007,false
+1380,3834114556,inline,yash170603,human,true,false,false,false,Added the requested tests,internal/restapi/reference_utils_test.go,,1380-011,false
+1380,3834115889,inline,yash170603,human,true,false,false,false,Updated the test as requested,internal/restapi/reference_utils_test.go,,1380-012,false
+1380,4997888206,review_body,yash170603,human,true,false,false,true,,,,1380-016,false
+1380,4997889590,review_body,yash170603,human,true,false,false,true,,,,1380-017,false

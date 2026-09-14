@@ -1,0 +1,11 @@
+{
+  "pr_number": 1313,
+  "n_all": 50,
+  "n_independent_human": 15,
+  "n_human_meaningful": 12,
+  "n_process_only": 3,
+  "n_bot": 14,
+  "n_author": 21,
+  "n_study_author": 0,
+  "labels_assigned": false
+}

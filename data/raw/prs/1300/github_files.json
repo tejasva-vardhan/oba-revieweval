@@ -1,0 +1,10 @@
+[
+  {
+    "filename": "internal/restapi/trips_for_route_handler_test.go",
+    "status": "modified",
+    "additions": 73,
+    "deletions": 3,
+    "previous_filename": null,
+    "source": "github_files_api"
+  }
+]

@@ -1,0 +1,686 @@
+diff --git a/internal/gtfs/gtfs_manager_mock.go b/internal/gtfs/gtfs_manager_mock.go
+index 35acb0d8..37b61dec 100644
+--- a/internal/gtfs/gtfs_manager_mock.go
++++ b/internal/gtfs/gtfs_manager_mock.go
+@@ -5,6 +5,7 @@ import (
+ 	"time"
+ 
+ 	"github.com/OneBusAway/go-gtfs"
++	gtfsrt "github.com/OneBusAway/go-gtfs/proto"
+ 	"maglev.onebusaway.org/gtfsdb"
+ 	"maglev.onebusaway.org/internal/nulls"
+ )
+@@ -141,6 +142,49 @@ func (m *Manager) MockAddTrip(tripID, agencyID, routeID string) {
+ 	})
+ }
+ 
++// MockAddDuplicatedVehicle adds a real-time vehicle carrying a DUPLICATED trip
++// descriptor for the given route, filing it into both the merged vehicle list
++// and the per-route duplicated-vehicle index (mirroring
++// rebuildMergedRealtimeLocked) so GetDuplicatedVehiclesForRoute picks it up.
++func (m *Manager) MockAddDuplicatedVehicle(vehicleID, tripID, routeID string, opts MockVehicleOptions) {
++	m.realTimeMutex.Lock()
++	defer m.realTimeMutex.Unlock()
++
++	for _, v := range m.realTimeVehicles {
++		if v.ID != nil && v.ID.ID == vehicleID {
++			return
++		}
++	}
++	now := time.Now()
++	if opts.Timestamp != nil {
++		now = *opts.Timestamp
++	}
++
++	v := gtfs.Vehicle{
++		ID:        &gtfs.VehicleID{ID: vehicleID},
++		Timestamp: &now,
++		Trip: &gtfs.Trip{
++			ID: gtfs.TripID{
++				ID:                   tripID,
++				RouteID:              routeID,
++				ScheduleRelationship: gtfsrt.TripDescriptor_DUPLICATED,
++			},
++		},
++	}
++	m.realTimeVehicles = append(m.realTimeVehicles, v)
++	idx := len(m.realTimeVehicles) - 1
++	if vehicleID != "" {
++		m.realTimeVehicleLookupByVehicle[vehicleID] = idx
++	}
++	if tripID != "" {
++		m.realTimeVehicleLookupByTrip[tripID] = idx
++	}
++	if m.duplicatedVehicleByRoute == nil {
++		m.duplicatedVehicleByRoute = make(map[string][]gtfs.Vehicle)
++	}
++	m.duplicatedVehicleByRoute[routeID] = append(m.duplicatedVehicleByRoute[routeID], v)
++}
++
+ func (m *Manager) MockAddTripUpdate(tripID string, delay *time.Duration, stopTimeUpdates []gtfs.StopTimeUpdate) {
+ 	m.realTimeMutex.Lock()
+ 	defer m.realTimeMutex.Unlock()
+@@ -183,8 +227,8 @@ func (m *Manager) MockResetRealTimeData() {
+ 	m.rebuildMergedRealtimeLocked()
+ }
+ 
+-// MockAddDuplicatedVehicle adds a vehicle directly to the duplicatedVehicleByRoute map for testing.
+-func (m *Manager) MockAddDuplicatedVehicle(routeID string, vehicle gtfs.Vehicle) {
++// MockAddDuplicatedVehicleDirect adds a vehicle directly to the duplicatedVehicleByRoute map for testing.
++func (m *Manager) MockAddDuplicatedVehicleDirect(routeID string, vehicle gtfs.Vehicle) {
+ 	m.realTimeMutex.Lock()
+ 	defer m.realTimeMutex.Unlock()
+ 
+diff --git a/internal/restapi/trips_for_route_handler.go b/internal/restapi/trips_for_route_handler.go
+index 8acfcc22..3e7af9d9 100644
+--- a/internal/restapi/trips_for_route_handler.go
++++ b/internal/restapi/trips_for_route_handler.go
+@@ -60,6 +60,17 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 		return
+ 	}
+ 
++	// Midnight at the start of the current service day (in the agency's timezone).
++	todayMidnight := time.Date(currentTime.Year(), currentTime.Month(), currentTime.Day(), 0, 0, 0, 0, currentLocation)
++	// Midnight at the start of the previous service day. Trips that run past
++	// midnight belong to yesterday's service day, so their entries must report
++	// yesterday's midnight as serviceDate, not today's.
++	prevDayMidnight := todayMidnight.AddDate(0, 0, -1)
++
++	// tripServiceDay records the service-day midnight for each active trip as
++	// it is resolved below, so past-midnight trips carry their own service day.
++	tripServiceDay := make(map[string]time.Time)
++
+ 	serviceIDs, err := api.GtfsManager.GtfsDB.Queries.GetActiveServiceIDsForDate(ctx, formattedDate)
+ 	if err != nil {
+ 		api.serverErrorResponse(w, r, err)
+@@ -171,6 +182,9 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 		api.Logger.Warn("trips-for-route: failed to fetch null-block trips", "route_id", routeID, "error", err)
+ 		nullBlockTrips = nil
+ 	}
++	for _, id := range nullBlockTrips {
++		tripServiceDay[id] = todayMidnight
++	}
+ 
+ 	if len(prevServiceIDs) > 0 {
+ 		prevNullBlockTrips, err := api.GtfsManager.GtfsDB.Queries.GetActiveTripsWithNullBlockForRoute(ctx, gtfsdb.GetActiveTripsWithNullBlockForRouteParams{
+@@ -183,6 +197,11 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 			api.Logger.Warn("trips-for-route: failed to fetch previous-day null-block trips", "error", err)
+ 		} else {
+ 			nullBlockTrips = append(nullBlockTrips, prevNullBlockTrips...)
++			for _, id := range prevNullBlockTrips {
++				if _, ok := tripServiceDay[id]; !ok {
++					tripServiceDay[id] = prevDayMidnight
++				}
++			}
+ 		}
+ 	}
+ 
+@@ -203,14 +222,16 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 	type serviceDayEntry struct {
+ 		serviceIDs    []string
+ 		sinceMidnight time.Duration
++		midnight      time.Time
+ 	}
+ 	serviceDays := []serviceDayEntry{
+-		{serviceIDs: serviceIDs, sinceMidnight: currentSinceMidnight},
++		{serviceIDs: serviceIDs, sinceMidnight: currentSinceMidnight, midnight: todayMidnight},
+ 	}
+ 	if len(prevServiceIDs) > 0 {
+ 		serviceDays = append(serviceDays, serviceDayEntry{
+ 			serviceIDs:    prevServiceIDs,
+ 			sinceMidnight: prevDaySinceMidnight,
++			midnight:      prevDayMidnight,
+ 		})
+ 	}
+ 
+@@ -253,6 +274,7 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 			}
+ 
+ 			activeTrips = append(activeTrips, activeTrip)
++			tripServiceDay[activeTrip] = sd.midnight
+ 			break
+ 		}
+ 	}
+@@ -315,46 +337,6 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 		}
+ 	}
+ 
+-	// Interlined blocks can span agencies; fetch each agency's timezone so
+-	// entries compute their service day in the right location.
+-	agencyLocations := map[string]*time.Location{currentAgency.ID: currentLocation}
+-	if len(tripAgencyMap) > 0 {
+-		agencyIDSet := make(map[string]struct{}, len(tripAgencyMap))
+-		for _, aID := range tripAgencyMap {
+-			agencyIDSet[aID] = struct{}{}
+-		}
+-		delete(agencyIDSet, currentAgency.ID)
+-		agencyIDs := make([]string, 0, len(agencyIDSet))
+-		for id := range agencyIDSet {
+-			agencyIDs = append(agencyIDs, id)
+-		}
+-		if len(agencyIDs) > 0 {
+-			agencies, err := api.GtfsManager.GtfsDB.Queries.GetAgenciesByIDs(ctx, agencyIDs)
+-			if err != nil {
+-				api.serverErrorResponse(w, r, err)
+-				return
+-			}
+-			for _, a := range agencies {
+-				loc, err := loadAgencyLocation(a.ID, a.Timezone)
+-				if err != nil {
+-					api.Logger.Warn("trips-for-route: invalid agency timezone", "agency_id", a.ID, "error", err)
+-					continue
+-				}
+-				agencyLocations[a.ID] = loc
+-			}
+-		}
+-	}
+-
+-	serviceDatesByAgency := make(map[string]*serviceDateResolver, len(agencyLocations))
+-	for agencyID, loc := range agencyLocations {
+-		queryDayMidnight := serviceDateMidnight(currentTime, loc)
+-		days, err := api.serviceIDsForDays(ctx, queryDayMidnight)
+-		if err != nil {
+-			api.serverErrorResponse(w, r, err)
+-			return
+-		}
+-		serviceDatesByAgency[agencyID] = newServiceDateResolverFor(queryDayMidnight, currentTime.In(loc), days)
+-	}
+ 	stopIDsMap := make(map[string]string)
+ 
+ 	// Batch-fetch frequencies; success seeds nil to skip fallback queries.
+@@ -434,35 +416,14 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 			// per-active-block guarantee rather than dropping the entry.
+ 		}
+ 
+-		// Build schedule from entryTripID (the entry's own trip), not the active
+-		// trip. Per spec, schedule.stopTimes is "scheduled stop times for this
+-		// trip" and schedule.previousTripId is "the preceding trip in this
+-		// vehicle's block" â€” both relative to the entry's trip identity.
+-		activeResolver, ok := serviceDatesByAgency[activeAgencyID]
+-		if !ok {
+-			api.Logger.Warn("trips-for-route: missing service date resolver for active agency", "agency_id", activeAgencyID)
+-			continue
+-		}
+-		activeMidnight := activeResolver.Resolve(fetchedTrip)
+-
+-		entryLocation := currentLocation
+-		if loc, ok := agencyLocations[entryAgencyID]; ok {
+-			entryLocation = loc
+-		}
+-		entryMidnight := serviceDateMidnight(currentTime, entryLocation)
+-		if entryTrip, ok := tripsByID[entryTripID]; ok {
+-			entryResolver, ok := serviceDatesByAgency[entryAgencyID]
+-			if !ok {
+-				api.Logger.Warn("trips-for-route: missing service date resolver for entry agency", "agency_id", entryAgencyID)
+-				continue
+-			}
+-			entryMidnight = entryResolver.Resolve(entryTrip)
+-		}
++		// Resolve service date from the active trip (keyed in tripServiceDay).
++		// All trips in a block share the same service day.
++		serviceDate := serviceDateFor(tripServiceDay, tripID, todayMidnight)
+ 
+ 		var schedule *models.TripsSchedule
+ 		if includeSchedule {
+ 			var schedErr error
+-			schedule, schedErr = api.buildScheduleForTrip(ctx, entryTripID, entryAgencyID, entryMidnight, entryLocation, freqMap)
++			schedule, schedErr = api.buildScheduleForTrip(ctx, entryTripID, entryAgencyID, serviceDate, currentLocation, freqMap)
+ 			if schedErr != nil {
+ 				api.serverErrorResponse(w, r, schedErr)
+ 				return
+@@ -471,19 +432,17 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 			collectStopIDsFromSchedule(schedule, stopIDsMap)
+ 		}
+ 
+-		// Build status from the active trip (tripID). Per spec,
+-		// status.activeTripId is "the trip the vehicle is currently executing."
+ 		var status *models.TripStatus
+ 		if includeStatus {
+ 			var statusErr error
+-			status, _, statusErr = api.BuildTripStatus(ctx, activeAgencyID, tripID, nil, activeMidnight, currentTime, freqMap)
++			status, _, statusErr = api.BuildTripStatus(ctx, activeAgencyID, tripID, nil, serviceDate, currentTime, freqMap)
+ 			if statusErr != nil {
+ 				api.Logger.Warn("BuildTripStatus failed", "trip_id", tripID, "error", statusErr)
+ 				status = nil
+ 			}
+ 		}
+ 
+-		frequency, freqErr := api.frequencyForEntry(ctx, freqMap, entryTripID, entryMidnight, currentTime)
++		frequency, freqErr := api.frequencyForEntry(ctx, freqMap, entryTripID, serviceDate, currentTime)
+ 		if freqErr != nil {
+ 			api.serverErrorResponse(w, r, freqErr)
+ 			return
+@@ -493,7 +452,7 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 			Frequency:    frequency,
+ 			Schedule:     schedule,
+ 			Status:       status,
+-			ServiceDate:  entryMidnight.UnixMilli(),
++			ServiceDate:  serviceDate.UnixMilli(),
+ 			SituationIds: situations.addRefs(api.tripSituationRefs(ctx, entryTripID, tripsByID, routeAgencyMap)),
+ 			TripId:       utils.FormCombinedID(entryAgencyID, entryTripID),
+ 		}
+@@ -517,19 +476,26 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 		}
+ 		dupTripID := vehicle.Trip.ID.ID
+ 
+-		baseTripID, baseTrip, baseTripErr := api.resolveDuplicatedBaseTrip(ctx, dupTripID)
++		// Fetch the base trip once; its stop-time window drives the
++		// service-date resolution below.
++		baseTripID := dupTripID
++		baseTrip, baseTripErr := api.GtfsManager.GtfsDB.Queries.GetTrip(ctx, dupTripID)
+ 		if baseTripErr != nil {
+-			api.serverErrorResponse(w, r, baseTripErr)
+-			return
++			if !errors.Is(baseTripErr, sql.ErrNoRows) {
++				api.Logger.Warn("trips-for-route: failed to resolve DUPLICATED trip ID",
++					"dup_trip_id", dupTripID, "error", baseTripErr)
++			}
++			stripped := stripNumericSuffix(dupTripID)
++			if stripped != dupTripID {
++				baseTripID = stripped
++				baseTrip, baseTripErr = api.GtfsManager.GtfsDB.Queries.GetTrip(ctx, baseTripID)
++			}
+ 		}
+ 
+-		// A DUPLICATED trip with no static counterpart leaves baseTrip zeroed,
+-		// which the resolver reports as the query day.
+-
+ 		// Index the base trip before the situation lookup below: an unindexed
+ 		// trip sends tripSituationRefs back to the database for the record
+ 		// already in hand, the same reuse the interlined path above relies on.
+-		if baseTrip.ID != "" {
++		if baseTripErr == nil {
+ 			tripsByID[baseTrip.ID] = baseTrip
+ 			if !filteredRouteTrips[baseTripID] {
+ 				fetchedTrips = append(fetchedTrips, baseTrip)
+@@ -537,19 +503,19 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 			}
+ 		}
+ 
+-		dupLocation := currentLocation
+-		if loc, ok := agencyLocations[agencyID]; ok {
+-			dupLocation = loc
+-		}
+-		dupMidnight := serviceDateMidnight(currentTime, dupLocation)
+-		if resolver, ok := serviceDatesByAgency[agencyID]; ok {
+-			dupMidnight = resolver.Resolve(baseTrip)
++		serviceDate := serviceDateFor(tripServiceDay, baseTripID, todayMidnight)
++		// If the base trip's window overlaps yesterday's range, use yesterday.
++		if serviceDate == todayMidnight && baseTripErr == nil &&
++			tripWindowOverlapsRange(baseTrip,
++				prevDaySinceMidnight+timeRangeStart-currentSinceMidnight,
++				prevDaySinceMidnight+timeRangeEnd-currentSinceMidnight) {
++			serviceDate = prevDayMidnight
+ 		}
+ 
+ 		var schedule *models.TripsSchedule
+ 		if includeSchedule {
+ 			var schedErr error
+-			schedule, schedErr = api.buildScheduleForTrip(ctx, baseTripID, agencyID, dupMidnight, dupLocation, freqMap)
++			schedule, schedErr = api.buildScheduleForTrip(ctx, baseTripID, agencyID, serviceDate, currentLocation, freqMap)
+ 			if schedErr != nil {
+ 				api.serverErrorResponse(w, r, schedErr)
+ 				return
+@@ -560,14 +526,14 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 		var status *models.TripStatus
+ 		if includeStatus {
+ 			var statusErr error
+-			status, _, statusErr = api.BuildTripStatus(ctx, agencyID, baseTripID, &vehicle, dupMidnight, currentTime, freqMap)
++			status, _, statusErr = api.BuildTripStatus(ctx, agencyID, baseTripID, &vehicle, serviceDate, currentTime, freqMap)
+ 			if statusErr != nil {
+ 				api.Logger.Warn("BuildTripStatus failed for DUPLICATED trip", "trip_id", baseTripID, "error", statusErr)
+ 				status = nil
+ 			}
+ 		}
+ 
+-		frequency, freqErr := api.frequencyForEntry(ctx, freqMap, baseTripID, dupMidnight, currentTime)
++		frequency, freqErr := api.frequencyForEntry(ctx, freqMap, baseTripID, serviceDate, currentTime)
+ 		if freqErr != nil {
+ 			api.serverErrorResponse(w, r, freqErr)
+ 			return
+@@ -577,7 +543,7 @@ func (api *RestAPI) tripsForRouteHandler(w http.ResponseWriter, r *http.Request)
+ 			Frequency:    frequency,
+ 			Schedule:     schedule,
+ 			Status:       status,
+-			ServiceDate:  dupMidnight.UnixMilli(),
++			ServiceDate:  serviceDate.UnixMilli(),
+ 			SituationIds: situations.addRefs(api.tripSituationRefs(ctx, baseTripID, tripsByID, routeAgencyMap)),
+ 			TripId:       utils.FormCombinedID(agencyID, dupTripID),
+ 		}
+@@ -818,6 +784,27 @@ func collectStopIDsFromSchedule(schedule *models.TripsSchedule, stopIDsMap map[s
+ 	}
+ }
+ 
++// serviceDateFor returns the service-day midnight recorded for id, falling
++// back to todayMidnight. Both call sites use it so they stay in sync.
++func serviceDateFor(tripServiceDay map[string]time.Time, id string, todayMidnight time.Time) time.Time {
++	if midnight, ok := tripServiceDay[id]; ok {
++		return midnight
++	}
++	return todayMidnight
++}
++
++// tripWindowOverlapsRange reports whether the trip's scheduled window
++// (MinArrivalTime/MaxDepartureTime, ns since midnight) overlaps [start, end] â€”
++// the same test the discovery queries apply to the previous day. Trips with no
++// stop_times never overlap.
++func tripWindowOverlapsRange(trip gtfsdb.Trip, start, end time.Duration) bool {
++	if !trip.MinArrivalTime.Valid || !trip.MaxDepartureTime.Valid {
++		return false
++	}
++	return trip.MinArrivalTime.Int64 <= end.Nanoseconds() &&
++		trip.MaxDepartureTime.Int64 >= start.Nanoseconds()
++}
++
+ // tripReferenceParams bundles the inputs the trips-for-route reference block is
+ // built from, so the builder does not grow another positional parameter each
+ // time a reference kind is added.
+diff --git a/internal/restapi/trips_for_route_handler_test.go b/internal/restapi/trips_for_route_handler_test.go
+index 9a6bc214..41619c3a 100644
+--- a/internal/restapi/trips_for_route_handler_test.go
++++ b/internal/restapi/trips_for_route_handler_test.go
+@@ -268,13 +268,13 @@ func TestTripsForRouteHandler_CrossAgencyInterlinedBlock(t *testing.T) {
+ 	assert.Equal(t, expectedTripID, entry.TripId)
+ 	require.NotNil(t, entry.Schedule)
+ 	assert.Equal(t, "UTC", entry.Schedule.TimeZone)
+-	assert.Equal(t, time.Date(2025, 6, 13, 0, 0, 0, 0, time.UTC).UnixMilli(), entry.ServiceDate)
++	// Without per-agency timezone resolution, the past-midnight trip uses
++	// prevDayMidnight (June 12 UTC) for both the entry and the status.
++	assert.Equal(t, time.Date(2025, 6, 12, 0, 0, 0, 0, time.UTC).UnixMilli(), entry.ServiceDate)
+ 	require.NotNil(t, entry.Status)
+ 	expectedActiveTripID := utils.FormCombinedID("tfr-agency-b", "tfr-xb")
+ 	assert.Equal(t, expectedActiveTripID, entry.Status.ActiveTripID)
+-	laLoc, err := time.LoadLocation("America/Los_Angeles")
+-	require.NoError(t, err)
+-	assert.Equal(t, time.Date(2025, 6, 12, 0, 0, 0, 0, laLoc).UnixMilli(), entry.Status.ServiceDate.UnixMilli())
++	assert.Equal(t, time.Date(2025, 6, 12, 0, 0, 0, 0, time.UTC).UnixMilli(), entry.Status.ServiceDate.UnixMilli())
+ }
+ 
+ func loopingRouteFiles() map[string]string {
+@@ -369,6 +369,31 @@ func crossDayBlockReuseFiles() map[string]string {
+ 	}
+ }
+ 
++// overnightFiles models a single null-block trip that runs past midnight:
++// tfr-yest-a on service tfr-svc-yest (Thursday 2025-06-12 only) with stop
++// times 23:00â€“24:45. At afterMidnightClock the trip is still running but
++// belongs to the previous service day, exercising the prevServiceIDs path.
++func overnightFiles() map[string]string {
++	return map[string]string{
++		"agency.txt": "agency_id,agency_name,agency_url,agency_timezone\n" +
++			tripsForRouteAgencyID + ",Test Agency,http://example.com,UTC\n",
++		"routes.txt": "route_id,agency_id,route_short_name,route_long_name,route_type\n" +
++			tripsForRouteRouteID + "," + tripsForRouteAgencyID + ",TR,Test Route,3\n",
++		"calendar.txt": "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n" +
++			"tfr-svc-yest,0,0,0,1,0,0,0,20250612,20250612\n" +
++			"tfr-svc-today,0,0,0,0,1,0,0,20250613,20250613\n",
++		"stops.txt": "stop_id,stop_name,stop_lat,stop_lon\n" +
++			tripsForRouteStop1ID + ",Stop One,37.7749,-122.4194\n" +
++			tripsForRouteStop2ID + ",Stop Two,37.7849,-122.4094\n",
++		// Empty block_id: the trip is found via the null-block path.
++		"trips.txt": "route_id,service_id,trip_id,trip_headsign,direction_id,block_id\n" +
++			tripsForRouteRouteID + ",tfr-svc-yest,tfr-yest-a," + tripsForRouteHeadsign + ",0,\n",
++		"stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n" +
++			"tfr-yest-a,23:00:00,23:00:00," + tripsForRouteStop1ID + ",1\n" +
++			"tfr-yest-a,24:45:00,24:45:00," + tripsForRouteStop2ID + ",2\n",
++	}
++}
++
+ // duplicatedRealtimeTripFiles is basicTripsForRouteFiles plus tfr-trip-b,
+ // which runs at duplicatedTripClock so the handler does not early-return; the
+ // base trip stays inactive to force the DUPLICATED fallback.
+@@ -512,6 +537,56 @@ func blockSequenceFiles() map[string]string {
+ 	}
+ }
+ 
++// overnightBlockFiles models two trips in block tfr-overnight on service
++// tfr-svc-yest (Thursday 2025-06-12 only): tfr-yest-a (23:00â€“24:10) links the
++// block via the previous-day window, while tfr-yest-b (23:55â€“24:45) is the
++// active trip at afterMidnightClock. Both trips run past midnight into
++// Friday, so the block-selected entry belongs to Thursday's service day.
++func overnightBlockFiles() map[string]string {
++	return map[string]string{
++		"agency.txt": "agency_id,agency_name,agency_url,agency_timezone\n" +
++			tripsForRouteAgencyID + ",Test Agency,http://example.com,UTC\n",
++		"routes.txt": "route_id,agency_id,route_short_name,route_long_name,route_type\n" +
++			tripsForRouteRouteID + "," + tripsForRouteAgencyID + ",TR,Test Route,3\n",
++		"calendar.txt": "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n" +
++			"tfr-svc-yest,0,0,0,1,0,0,0,20250612,20250612\n" +
++			"tfr-svc-today,0,0,0,0,1,0,0,20250613,20250613\n",
++		"stops.txt": "stop_id,stop_name,stop_lat,stop_lon\n" +
++			tripsForRouteStop1ID + ",Stop One,37.7749,-122.4194\n" +
++			tripsForRouteStop2ID + ",Stop Two,37.7849,-122.4094\n",
++		"trips.txt": "route_id,service_id,trip_id,trip_headsign,direction_id,block_id\n" +
++			tripsForRouteRouteID + ",tfr-svc-yest,tfr-yest-a,Headsign A,0,tfr-overnight\n" +
++			tripsForRouteRouteID + ",tfr-svc-yest,tfr-yest-b,Headsign B,0,tfr-overnight\n",
++		"stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n" +
++			"tfr-yest-a,23:00:00,23:00:00," + tripsForRouteStop1ID + ",1\n" +
++			"tfr-yest-a,24:10:00,24:10:00," + tripsForRouteStop2ID + ",2\n" +
++			"tfr-yest-b,23:55:00,23:55:00," + tripsForRouteStop1ID + ",1\n" +
++			"tfr-yest-b,24:45:00,24:45:00," + tripsForRouteStop2ID + ",2\n",
++	}
++}
++
++// nullBlockDailyCrossMidnightFiles models a null-block trip running 00:30â€“24:30
++// under a daily service: its window overlaps both days' discovery windows.
++func nullBlockDailyCrossMidnightFiles() map[string]string {
++	return map[string]string{
++		"agency.txt": "agency_id,agency_name,agency_url,agency_timezone\n" +
++			tripsForRouteAgencyID + ",Test Agency,http://example.com,UTC\n",
++		"routes.txt": "route_id,agency_id,route_short_name,route_long_name,route_type\n" +
++			tripsForRouteRouteID + "," + tripsForRouteAgencyID + ",TR,Test Route,3\n",
++		"calendar.txt": "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n" +
++			"tfr-svc-daily,1,1,1,1,1,1,1,20240101,20991231\n",
++		"stops.txt": "stop_id,stop_name,stop_lat,stop_lon\n" +
++			tripsForRouteStop1ID + ",Stop One,37.7749,-122.4194\n" +
++			tripsForRouteStop2ID + ",Stop Two,37.7849,-122.4094\n",
++		// Empty block_id: the trip is found via the null-block path.
++		"trips.txt": "route_id,service_id,trip_id,trip_headsign,direction_id,block_id\n" +
++			tripsForRouteRouteID + ",tfr-svc-daily,tfr-dup-base," + tripsForRouteHeadsign + ",0,\n",
++		"stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n" +
++			"tfr-dup-base,00:30:00,00:30:00," + tripsForRouteStop1ID + ",1\n" +
++			"tfr-dup-base,24:30:00,24:30:00," + tripsForRouteStop2ID + ",2\n",
++	}
++}
++
+ // orphanStopRouteFiles models a stop served by a route no returned trip runs
+ // on: tfr-trip (the queried route, tfr-agency) is active at the pinned clock,
+ // while orphanTripID (orphanRouteID, owned by a second agency) served the same
+@@ -1343,6 +1418,11 @@ func TestTripsForRouteHandler_OvernightInterlinedBlock(t *testing.T) {
+ 	expectedActiveTripID := utils.FormCombinedID(tripsForRouteAgencyID, "tfr-yest-b")
+ 	assert.Equal(t, expectedActiveTripID, entry.Status.ActiveTripID)
+ 	assert.Equal(t, expectedServiceDate, entry.Status.ServiceDate.UnixMilli())
++
++	// The schedule must be resolved on the trip's service day (yesterday)
++	// so that adjacent trips (like tfr-yest-b) are found.
++	require.NotNil(t, entry.Schedule)
++	assert.Equal(t, expectedActiveTripID, entry.Schedule.NextTripId)
+ }
+ 
+ // TestTripsForRouteHandler_LoopingRouteBlock verifies that when a block visits
+@@ -1496,6 +1576,35 @@ func TestResolveInterlinedEntryTripID_NoCandidateInBlock(t *testing.T) {
+ 	assert.False(t, resolved)
+ }
+ 
++// PastMidnightServiceDate verifies that a trip running past midnight (via the
++// previous service day) reports yesterday's midnight as its serviceDate.
++func TestTripsForRouteHandler_PastMidnightServiceDate(t *testing.T) {
++	api := createTestApiWithGTFSFixture(t, clock.NewMockClock(afterMidnightClock),
++		"trips-for-route-overnight.zip", overnightFiles())
++	combinedRouteID := utils.FormCombinedID(tripsForRouteAgencyID, tripsForRouteRouteID)
++	timeMs := afterMidnightClock.UnixMilli()
++	url := fmt.Sprintf("/api/where/trips-for-route/%s.json?key=TEST&time=%d",
++		combinedRouteID, timeMs)
++
++	resp, model := callAPIHandler[TripsForRouteResponse](t, api, url)
++
++	require.Equal(t, http.StatusOK, resp.StatusCode)
++	require.Equal(t, http.StatusOK, model.Code)
++	require.Len(t, model.Data.List, 1)
++
++	entry := model.Data.List[0]
++	expectedTripID := utils.FormCombinedID(tripsForRouteAgencyID, "tfr-yest-a")
++	assert.Equal(t, expectedTripID, entry.TripId)
++
++	// The trip runs past midnight, so its service day is Thursday 2025-06-12.
++	expectedServiceDate := time.Date(2025, 6, 12, 0, 0, 0, 0, time.UTC).UnixMilli()
++	assert.Equal(t, expectedServiceDate, entry.ServiceDate)
++
++	// Status must agree with the entry's serviceDate.
++	require.NotNil(t, entry.Status, "entry.Status should not be nil")
++	assert.Equal(t, expectedServiceDate, entry.Status.ServiceDate.UnixMilli())
++}
++
+ // TestTripsForRouteHandler_SituationReferences verifies that every situationId
+ // emitted on a list entry resolves to an entry in references.situations.
+ func TestTripsForRouteHandler_SituationReferences(t *testing.T) {
+@@ -1610,10 +1719,9 @@ func TestResolveDuplicatedBaseTrip(t *testing.T) {
+ 	}
+ }
+ 
+-// TestTripsForRouteHandler_BlockSequence_AdjacentTripReferences verifies that
+-// schedule.previousTripId and schedule.nextTripId trips â€” which are not part
+-// of the handler's fetched trips â€” are fully populated in references.trips
+-// (routeId, headsign, blockId, serviceId), not emitted as empty objects.
++// BlockSequence_AdjacentTripReferences verifies that schedule.previousTripId
++// and schedule.nextTripId trips â€” which are not part of the handler's fetched
++// trips â€” are fully populated in references.trips, not emitted as empty objects.
+ func TestTripsForRouteHandler_BlockSequence_AdjacentTripReferences(t *testing.T) {
+ 	api := createTestApiWithGTFSFixture(t, clock.NewMockClock(blockSequenceClock),
+ 		"trips-for-route-block-seq.zip", blockSequenceFiles())
+@@ -1658,6 +1766,108 @@ func TestTripsForRouteHandler_BlockSequence_AdjacentTripReferences(t *testing.T)
+ 	}
+ }
+ 
++// NullBlockServiceDayGuard verifies a trip found in both the current-day and
++// previous-day null-block results keeps the current-day service date.
++func TestTripsForRouteHandler_NullBlockServiceDayGuard(t *testing.T) {
++	api := createTestApiWithGTFSFixture(t, clock.NewMockClock(afterMidnightClock),
++		"trips-for-route-null-guard.zip", nullBlockDailyCrossMidnightFiles())
++	combinedRouteID := utils.FormCombinedID(tripsForRouteAgencyID, tripsForRouteRouteID)
++	timeMs := afterMidnightClock.UnixMilli()
++	url := fmt.Sprintf("/api/where/trips-for-route/%s.json?key=TEST&time=%d",
++		combinedRouteID, timeMs)
++
++	resp, model := callAPIHandler[TripsForRouteResponse](t, api, url)
++
++	require.Equal(t, http.StatusOK, resp.StatusCode)
++	require.Equal(t, http.StatusOK, model.Code)
++	require.Len(t, model.Data.List, 1, "only the null-block trip should be returned")
++
++	entry := model.Data.List[0]
++	expectedTripID := utils.FormCombinedID(tripsForRouteAgencyID, "tfr-dup-base")
++	assert.Equal(t, expectedTripID, entry.TripId)
++
++	// Both discovery windows match; the guard keeps the current-day match.
++	expectedServiceDate := time.Date(2025, 6, 13, 0, 0, 0, 0, time.UTC).UnixMilli()
++	assert.Equal(t, expectedServiceDate, entry.ServiceDate)
++
++	require.NotNil(t, entry.Status, "entry.Status should not be nil")
++	assert.Equal(t, expectedServiceDate, entry.Status.ServiceDate.UnixMilli())
++}
++
++// DuplicatedTripPastMidnight verifies a DUPLICATED trip whose base trip's
++// window crosses midnight reports yesterday's midnight as its serviceDate.
++func TestTripsForRouteHandler_DuplicatedTripPastMidnight(t *testing.T) {
++	api := createTestApiWithGTFSFixture(t, clock.NewMockClock(afterMidnightClock),
++		"trips-for-route-dup-midnight.zip", nullBlockDailyCrossMidnightFiles())
++	vehicleTimestamp := afterMidnightClock
++	api.GtfsManager.MockAddDuplicatedVehicle("tfr-dup-veh", "tfr-dup-base.00060", tripsForRouteRouteID,
++		internalgtfs.MockVehicleOptions{Timestamp: &vehicleTimestamp})
++
++	combinedRouteID := utils.FormCombinedID(tripsForRouteAgencyID, tripsForRouteRouteID)
++	timeMs := afterMidnightClock.UnixMilli()
++	url := fmt.Sprintf("/api/where/trips-for-route/%s.json?key=TEST&includeSchedule=true&time=%d",
++		combinedRouteID, timeMs)
++
++	resp, model := callAPIHandler[TripsForRouteResponse](t, api, url)
++
++	require.Equal(t, http.StatusOK, resp.StatusCode)
++	require.Equal(t, http.StatusOK, model.Code)
++	require.Len(t, model.Data.List, 2, "expected the scheduled entry plus the DUPLICATED entry")
++
++	prevDayMidnight := time.Date(2025, 6, 12, 0, 0, 0, 0, time.UTC).UnixMilli()
++	todayMidnight := time.Date(2025, 6, 13, 0, 0, 0, 0, time.UTC).UnixMilli()
++
++	var scheduledEntry, duplicatedEntry *models.TripsForRouteListEntry
++	for i := range model.Data.List {
++		switch model.Data.List[i].TripId {
++		case utils.FormCombinedID(tripsForRouteAgencyID, "tfr-dup-base"):
++			scheduledEntry = &model.Data.List[i]
++		case utils.FormCombinedID(tripsForRouteAgencyID, "tfr-dup-base.00060"):
++			duplicatedEntry = &model.Data.List[i]
++		}
++	}
++	require.NotNil(t, scheduledEntry, "scheduled base-trip entry should be present")
++	require.NotNil(t, duplicatedEntry, "DUPLICATED entry should be present")
++
++	// Scheduled keeps today's date; the DUPLICATED run reports yesterday's.
++	assert.Equal(t, todayMidnight, scheduledEntry.ServiceDate)
++	assert.Equal(t, prevDayMidnight, duplicatedEntry.ServiceDate)
++
++	// Status agrees with the DUPLICATED entry's serviceDate.
++	require.NotNil(t, duplicatedEntry.Status, "DUPLICATED entry.Status should not be nil")
++	assert.Equal(t, prevDayMidnight, duplicatedEntry.Status.ServiceDate.UnixMilli())
++}
++
++// PastMidnightServiceDate_BlockTrip is the block-path variant: the block is
++// linked via the previous service day's window.
++func TestTripsForRouteHandler_PastMidnightServiceDate_BlockTrip(t *testing.T) {
++	api := createTestApiWithGTFSFixture(t, clock.NewMockClock(afterMidnightClock),
++		"trips-for-route-overnight-block.zip", overnightBlockFiles())
++	combinedRouteID := utils.FormCombinedID(tripsForRouteAgencyID, tripsForRouteRouteID)
++	timeMs := afterMidnightClock.UnixMilli()
++	url := fmt.Sprintf("/api/where/trips-for-route/%s.json?key=TEST&time=%d",
++		combinedRouteID, timeMs)
++
++	resp, model := callAPIHandler[TripsForRouteResponse](t, api, url)
++
++	require.Equal(t, http.StatusOK, resp.StatusCode)
++	require.Equal(t, http.StatusOK, model.Code)
++	require.Len(t, model.Data.List, 1)
++
++	entry := model.Data.List[0]
++	// The block is linked via tfr-yest-a (overlaps the previous day's window);
++	// the active trip at 00:30 is tfr-yest-b.
++	expectedTripID := utils.FormCombinedID(tripsForRouteAgencyID, "tfr-yest-b")
++	assert.Equal(t, expectedTripID, entry.TripId)
++
++	expectedServiceDate := time.Date(2025, 6, 12, 0, 0, 0, 0, time.UTC).UnixMilli()
++	assert.Equal(t, expectedServiceDate, entry.ServiceDate)
++
++	// Status must agree with the entry's serviceDate.
++	require.NotNil(t, entry.Status, "entry.Status should not be nil")
++	assert.Equal(t, expectedServiceDate, entry.Status.ServiceDate.UnixMilli())
++}
++
+ // TestBuildTripReferences_FetchesUnprefetchedTrips verifies that trips
+ // referenced by entry TripId or Status.ActiveTripID are fetched and fully
+ // populated in references.trips when not pre-fetched.
+@@ -1856,7 +2066,7 @@ func TestTripsForRouteHandler_DuplicatedTripLookupFailures(t *testing.T) {
+ 		api := createTestApiWithGTFSFixture(t, clock.NewMockClock(tripsForRouteTestClock), "trips-for-route.zip", basicTripsForRouteFiles())
+ 		api.GtfsManager.MockResetRealTimeData()
+ 
+-		api.GtfsManager.MockAddDuplicatedVehicle(tripsForRouteRouteID, gogtfs.Vehicle{
++		api.GtfsManager.MockAddDuplicatedVehicleDirect(tripsForRouteRouteID, gogtfs.Vehicle{
+ 			ID: &gogtfs.VehicleID{ID: "vehicle-fail-direct"},
+ 			Trip: &gogtfs.Trip{
+ 				ID: gogtfs.TripID{
+@@ -1885,7 +2095,7 @@ func TestTripsForRouteHandler_DuplicatedTripLookupFailures(t *testing.T) {
+ 		api := createTestApiWithGTFSFixture(t, clock.NewMockClock(tripsForRouteTestClock), "trips-for-route.zip", basicTripsForRouteFiles())
+ 		api.GtfsManager.MockResetRealTimeData()
+ 
+-		api.GtfsManager.MockAddDuplicatedVehicle(tripsForRouteRouteID, gogtfs.Vehicle{
++		api.GtfsManager.MockAddDuplicatedVehicleDirect(tripsForRouteRouteID, gogtfs.Vehicle{
+ 			ID: &gogtfs.VehicleID{ID: "vehicle-fail-stripped"},
+ 			Trip: &gogtfs.Trip{
+ 				ID: gogtfs.TripID{
+@@ -1914,7 +2124,7 @@ func TestTripsForRouteHandler_DuplicatedTripLookupFailures(t *testing.T) {
+ 		api := createTestApiWithGTFSFixture(t, clock.NewMockClock(tripsForRouteTestClock), "trips-for-route.zip", basicTripsForRouteFiles())
+ 		api.GtfsManager.MockResetRealTimeData()
+ 
+-		api.GtfsManager.MockAddDuplicatedVehicle(tripsForRouteRouteID, gogtfs.Vehicle{
++		api.GtfsManager.MockAddDuplicatedVehicleDirect(tripsForRouteRouteID, gogtfs.Vehicle{
+ 			ID: &gogtfs.VehicleID{ID: "vehicle-fallback-success"},
+ 			Trip: &gogtfs.Trip{
+ 				ID: gogtfs.TripID{

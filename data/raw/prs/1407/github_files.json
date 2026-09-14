@@ -1,0 +1,18 @@
+[
+  {
+    "filename": "internal/restapi/arrivals_and_departures_for_stop_handler.go",
+    "status": "modified",
+    "additions": null,
+    "deletions": null,
+    "previous_filename": null,
+    "source": "github_pull_diff"
+  },
+  {
+    "filename": "internal/restapi/arrivals_core.go",
+    "status": "added",
+    "additions": null,
+    "deletions": null,
+    "previous_filename": null,
+    "source": "github_pull_diff"
+  }
+]

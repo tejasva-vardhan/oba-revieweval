@@ -1,4 +1,8 @@
-"""Export one Maglev PR to data/raw/prs/<number>/ and unlabeled extraction."""
+"""Export one Maglev PR to data/raw/prs/<number>/ and unlabeled extraction.
+
+For the recommended n=33 corpus, use `scripts/export_corpus.py` instead.
+That path reconstructs diffs from the merge SHA rather than a live PR diff.
+"""
 
 from __future__ import annotations
 

@@ -1,0 +1,35 @@
+{
+  "html_url": "https://github.com/OneBusAway/maglev/pull/1380",
+  "merge_sha": "3d31989f2dd50bd5aec5820da974577b3eac57eb",
+  "title": "Fix (#1046) : Stops fetch request by agency polluted by non-requested agencies stops.",
+  "review_count": 9,
+  "pr_number": 1380,
+  "state": "closed",
+  "changed_files": [
+    "internal/restapi/reference_utils.go",
+    "internal/restapi/reference_utils_test.go",
+    "internal/restapi/stops_for_agency_handler.go",
+    "internal/restapi/stops_for_agency_handler_test.go",
+    "internal/restapi/stops_for_route_handler.go",
+    "internal/restapi/stops_for_route_handler_test.go"
+  ],
+  "change_kind": "code",
+  "merged": true,
+  "changed_file_count": 6,
+  "author_type": "User",
+  "repo": "OneBusAway/maglev",
+  "author": "yash170603",
+  "export_version": 1,
+  "collected_at": "2026-09-14",
+  "source": "GitHub REST API",
+  "diff_mode": "merge_parents_three_dot",
+  "diff_base_sha": "a84e19608feadd639096fe76cb792024daf9e6ca",
+  "diff_head_sha": "6d13ab928902e0d163bf266fed04d1e008df2fdc",
+  "merge_parents": [
+    "a84e19608feadd639096fe76cb792024daf9e6ca",
+    "6d13ab928902e0d163bf266fed04d1e008df2fdc"
+  ],
+  "stratum": "api_gtfs",
+  "diff_anchored_to_merge_sha": true,
+  "github_file_count": 6
+}

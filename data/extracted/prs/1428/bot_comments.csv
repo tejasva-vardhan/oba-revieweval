@@ -1,0 +1,201 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1428,5587156116,issue,coderabbitai[bot],bot,false,false,false,false," 
+ 
+
+ 
+
+ 
+ 
+
+> [!WARNING]
+> ## Review limit reached
+> 
+> **Next included review available in 21 minutes.**
+> 
+> [Check out review usage here](https://app.coderabbit.ai/dashboard/review-capacity?orgId=4ffed26d-49e5-47e7-b540-a16829c073be).
+> 
+> 
+> View limit details 
+> 
+> **Limit details:** You’ve used the included review currently available.
+> 
+> You've used all free OSS reviews for now. Wait for the free limit to reset to keep reviewing this public repository.
+> 
+> [Learn how review limits work](https://docs.coderabbit.ai/management/plans#rate-limits).
+> 
+> **Review configuration:**
+> 
+> 
+> ⚙️ Run configuration 
+> 
+> **Configuration used**: Repository UI
+> 
+> **Review profile**: ASSERTIVE
+> 
+> **Plan**: Advanced
+> 
+> **Run ID**: `298ddc55-5688-4395-aa56-f82027489317`
+> 
+> 
+> 
+> 
+> 📥 Commits 
+> 
+> Reviewing files that changed from the base of the PR and between 1d2d2be7f6d14e440b373488d2040ed5db69d1c7 and 55309631d1e96410c6d348ac989d9b359d80dd5e.
+> 
+> 
+> 
+> 
+> 📒 Files selected for processing (1) 
+> 
+> * `internal/restapi/block_handler_test.go`
+> 
+> 
+> 
+> 
+
+ 
+
+ 
+
+No actionable comments were generated in the recent review. 🎉
+
+ 
+ ℹ️ Recent review info 
+
+ 
+ ⚙️ Run configuration 
+
+**Configuration used**: Repository UI
+
+**Review profile**: ASSERTIVE
+
+**Plan**: Advanced
+
+**Run ID**: `4811da66-da7d-4dff-901a-bac32d3bf8d3`
+
+ 
+
+ 
+ 📥 Commits 
+
+Reviewing files that changed from the base of the PR and between f099da2edb1d0bb30e0ccef85b2d994e9daaa55d and 1d2d2be7f6d14e440b373488d2040ed5db69d1c7.
+
+ 
+
+ 
+ 📒 Files selected for processing (1) 
+
+* `internal/restapi/block_handler_test.go`
+
+ 
+
+**Included review availability:** Your plan provides up to 1 included review per hour; 0 remain after this review.
+
+ 
+
+---
+
+
+
+ 
+ 
+
+ 
+ 📝 Walkthrough 
+
+## Walkthrough
+
+The block handler now resets `blockDistance` for each service configuration. A regression test verifies that each configuration starts at zero and accumulates distance independently.
+
+### Changes
+
+**Block distance reset**
+
+|Layer / File(s)|Summary|
+|---|---|
+|**Reset distance and validate configuration boundaries** `internal/restapi/block_handler.go`, `internal/restapi/block_handler_test.go`|`blockDistance` is initialized inside the service-ID loop. The regression test verifies zero distance at the first stop and accumulation within each configuration.|
+
+ 
+**Priority:** ➖ Normal
+
+
+
+**Estimated code review effort:** 1 (Trivial) | ~5 minutes
+
+ 
+**Severity of issue fixed:** Medium
+ 
+
+ 
+**Merge Risk:** _⚪ Minimal_ · up to `1d2d2`
+ 
+
+Block-stop distances now start at zero for each independent configuration while continuing to accumulate within that configuration. The targeted behavior is covered through the API route, with no remaining concrete merge-blocking risk.
+ 
+
+**Suggested reviewers:** `omlahore`
+
+ 
+
+ 
+ 
+
+ 
+ 🚥 Pre-merge checks | ✅ 4 | ❌ 1 
+
+### ❌ Failed checks (1 warning)
+
+| Check name | Status | Explanation | Resolution |
+| :----------------: | :--------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------- |
+| Docstring Coverage | ⚠️ Warning | Docstring coverage is 0.00% which is insufficient. The required threshold is 80.00%. Docstring coverage is scoped to functions touched by this diff. Analyzed 4 functions across 2 files. | Write docstrings for the functions missing them to satisfy the coverage threshold. |
+
+ 
+ ✅ Passed checks (4 passed) 
+
+| Check name | Status | Explanation |
+| :------------------------: | :------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Description Check | ✅ Passed | Check skipped - CodeRabbit’s high-level summary is enabled. |
+| Title check | ✅ Passed | The title clearly describes the primary change: resetting distanceAlongBlock between block configurations. |
+| Linked Issues check | ✅ Passed | The change satisfies issue `#1427`. It scopes blockDistance to each service configuration and adds a regression test for reset and within-configuration accumulation. It does not address unrelated BlockS… |
+| Out of Scope Changes check | ✅ Passed | All changes support issue `#1427`. The implementation change and regression test are limited to resetting distanceAlongBlock between configurations. |
+
+ 
+
+ 
+
+ 
+ 
+
+---
+
+Thanks for using [CodeRabbit](https://coderabbit.ai?utm_source=oss&utm_medium=github&utm_campaign=OneBusAway/maglev&utm_content=1428)! It's free for OSS, and your support helps us grow. If you like it, consider giving us a shout-out.
+
+ 
+ ❤️ Share 
+
+- [X](https://twitter.com/intent/tweet?text=I%20just%20used%20%40coderabbitai%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20the%20proprietary%20code.%20Check%20it%20out%3A&url=https%3A//coderabbit.ai)
+- [Mastodon](https://mastodon.social/share?text=I%20just%20used%20%40coderabbitai%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20the%20proprietary%20code.%20Check%20it%20out%3A%20https%3A%2F%2Fcoderabbit.ai)
+- [Reddit](https://www.reddit.com/submit?title=Great%20tool%20for%20code%20review%20-%20CodeRabbit&text=I%20just%20used%20CodeRabbit%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20proprietary%20code.%20Check%20it%20out%3A%20https%3A//coderabbit.ai)
+- [LinkedIn](https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fcoderabbit.ai&mini=true&title=Great%20tool%20for%20code%20review%20-%20CodeRabbit&summary=I%20just%20used%20CodeRabbit%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20proprietary%20code)
+
+ 
+
+
+ Comment `@coderabbitai help` to get the list of available commands. 
+
+ ",,,1428-001,false
+1428,5600105393,issue,sonarqubecloud[bot],bot,false,false,false,false,"## [![Quality Gate Passed](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/checks/QualityGateBadge/qg-passed-20px.png 'Quality Gate Passed')](https://sonarcloud.io/dashboard?id=OneBusAway_maglev&pullRequest=1428) **Quality Gate passed** 
+Issues 
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0 New issues](https://sonarcloud.io/project/issues?id=OneBusAway_maglev&pullRequest=1428&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true) 
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/accepted-16px.png '') [0 Accepted issues](https://sonarcloud.io/project/issues?id=OneBusAway_maglev&pullRequest=1428&issueStatuses=ACCEPTED)
+
+Measures 
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0 Security Hotspots](https://sonarcloud.io/project/security_hotspots?id=OneBusAway_maglev&pullRequest=1428&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true) 
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0.0% Coverage on New Code](https://sonarcloud.io/component_measures?id=OneBusAway_maglev&pullRequest=1428&metric=new_coverage&view=list) 
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0.0% Duplication on New Code](https://sonarcloud.io/component_measures?id=OneBusAway_maglev&pullRequest=1428&metric=new_duplicated_lines_density&view=list) 
+ 
+ 
+[See analysis details on SonarQube Cloud](https://sonarcloud.io/dashboard?id=OneBusAway_maglev&pullRequest=1428)
+
+",,,1428-004,false

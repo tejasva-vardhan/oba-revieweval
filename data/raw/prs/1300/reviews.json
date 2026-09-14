@@ -1,0 +1,42 @@
+[
+  {
+    "id": 4890748463,
+    "login": "aaronbrethorst",
+    "user_type": "User",
+    "state": "CHANGES_REQUESTED",
+    "body": "Most of this test is load-bearing. Injecting a real GTFS-RT vehicle with a GPS fix and asserting on `status.position.lat/lon`, the `-1` `occupancyCount` sentinel, and non-null-but-empty `situationIds`/`vehicleFeatures` would all catch real regressions \u2014 and the `[]` vs `null` checks in particular guard something easy to break and hard to notice. I confirmed none of it contradicts `openapi.yml`'s `TripStatus` schema.\n\nThe one field the PR headlines first, though, asserts nothing.\n\n**`assert.GreaterOrEqual(t, entry.Status.BlockTripSequence, 0)` can never fail.** `calculateBlockTripSequence` returns 0 on any failure, and `BuildTripStatus` only assigns the field under `if blockTripSequence > 0` (`trips_helper.go:62-65`) \u2014 so it's non-negative by construction, whatever happens. The fixture is fully deterministic here (a single trip in `tfr-block`, and `GetBlockTripSequence` is zero-based), so the real assertion is `assert.Equal(t, 0, ...)`. One-line change.\n\nI know `GreaterOrEqual(seq, 0)` appears elsewhere in the suite, but those run over RABA data where the value genuinely isn't pinned. Over a controlled fixture \u2014 and in a PR whose stated goal is strict assertions \u2014 it's worth being exact.\n\nThe branch also conflicts with `main`, and more deeply than it looks: `createTestApiWithTripsForRouteFixture`, the helper this refactors, was removed in `c905b6c8` and replaced by a generic `createTestApiWithGTFSFixture(t, clock, zipName, files)` plus per-scenario file maps. So the `buildTripsForRouteFixtureZip` extraction is now redundant, and `createTestApiWithScheduledRealtimePosition` needs rebuilding on top of the new builder. That landed while this sat in the queue \u2014 not your doing. `TestTripsForRouteHandler_StatusFields` itself should transplant cleanly once the fixture dependency is sorted.\n\nOne last thing: the helper doc and test comment both emphasize \"a SCHEDULED vehicle\", but the feed never sets `ScheduleRelationship` (it relies on the proto default) and the test never asserts `Status`/`Phase`. Either assert it or soften the comment.\n\nHappy to re-review once it's rebased.\n",
+    "submitted_at": "2026-08-09T07:10:54Z"
+  },
+  {
+    "id": 4932969439,
+    "login": "burma-shave",
+    "user_type": "User",
+    "state": "CHANGES_REQUESTED",
+    "body": "merge main and fix conflicts",
+    "submitted_at": "2026-08-14T01:18:03Z"
+  },
+  {
+    "id": 4933041171,
+    "login": "aaronbrethorst",
+    "user_type": "User",
+    "state": "APPROVED",
+    "body": "Approving on the merits \u2014 this looks good, but it can't merge as-is. See below.\n\nAll three points from my last review are addressed: `GreaterOrEqual(seq, 0)` is now a real equality assertion, the redundant fixture-zip extraction is gone in favor of `createTestApiWithGTFSFixture`, and the \"SCHEDULED vehicle\" claim is asserted rather than narrated.\n\nI checked the parts that could have made this test quietly meaningless and they're sound. `InitGTFSManager` does a synchronous first RT fetch before `MarkReady()`, so there's no race. The fixture has no `shapes.txt`, which means `BuildTripStatus` skips shape projection and `status.Position` stays the raw GPS fix \u2014 so the `float64(float32(...))` expectation is correct rather than accidentally correct. And the `situationIds`/`vehicleFeatures` assertions are load-bearing, since decoding `null` into `[]string` yields nil and `require.NotNil` distinguishes `[]` from `null`.\n\nTwo things blocking the merge, neither of them the code:\n\n1. The branch conflicts with `main` \u2014 that file gained ~198 lines after your 08-11 rebase, touching the import block and the fixture region you also edit. Mechanical to resolve, but it needs doing.\n2. burma-shave has a change request still open here. My approval doesn't dismiss it, so please square that before merging.\n\nTwo notes for the rebase:\n\n- `createTestApiWithScheduledRealtimePosition` takes a `clock.Clock` parameter but hardcodes `tripsForRouteTestClock` for the feed header and vehicle timestamps. A future caller passing a different clock more than 15 minutes away would silently trip `StaleDetector` and get `default`/`scheduled` instead of a clear failure. Deriving the timestamp from `c.Now()` removes the trap.\n- The `occupancyCount` assertion's message says \"when the feed omits occupancy data,\" but `NewTripStatus()` sets -1 unconditionally and nothing on this path overwrites it \u2014 the assertion pins a constructor default, not feed-driven behavior.\n\nOne coordination note: #1298 adds a second real-time fixture builder to this same file using a different injection mechanism (`SetRealTimeVehiclesForTest` rather than an httptest feed). If both land we end up with two overlapping patterns \u2014 worth settling which one wins before the second merges.\n",
+    "submitted_at": "2026-08-14T01:36:14Z"
+  },
+  {
+    "id": 4977470107,
+    "login": "burma-shave",
+    "user_type": "User",
+    "state": "CHANGES_REQUESTED",
+    "body": "conflicts need to be resolved again",
+    "submitted_at": "2026-08-19T22:54:27Z"
+  },
+  {
+    "id": 5161962733,
+    "login": "burma-shave",
+    "user_type": "User",
+    "state": "APPROVED",
+    "body": "",
+    "submitted_at": "2026-09-10T02:16:59Z"
+  }
+]

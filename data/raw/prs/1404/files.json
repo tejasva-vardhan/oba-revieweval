@@ -1,0 +1,34 @@
+[
+  {
+    "filename": "internal/models/current_time.go",
+    "status": "modified",
+    "additions": 11,
+    "deletions": 2,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/models/current_time_test.go",
+    "status": "modified",
+    "additions": 2,
+    "deletions": 1,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/current_time_handler.go",
+    "status": "modified",
+    "additions": 19,
+    "deletions": 2,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/current_time_handler_test.go",
+    "status": "modified",
+    "additions": 66,
+    "deletions": 3,
+    "previous_filename": null,
+    "binary": false
+  }
+]

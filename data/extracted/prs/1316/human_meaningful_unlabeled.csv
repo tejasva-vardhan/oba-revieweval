@@ -1,0 +1,138 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1316,5230257749,issue,aaronbrethorst,human,false,false,true,false,"### Code review
+
+Found 1 issue:
+
+1. `runsOn` requires strict containment (`min_arrival_time <= now <= max_departure_time`), but the trips it is asked to classify are not all selected that way. `GetActiveTripsWithNullBlockForRoute` selects on *overlap* with `[now - 30 min, now + 10 min]` (`t.min_arrival_time <= time_range_end AND t.max_departure_time >= time_range_start`), and `tripsForRouteHandler` appends its previous-day results straight into `activeTrips` without any further containment check. So a previous-day null-block trip scheduled `23:00–24:10`, queried at 00:30, is selected (`24.167h >= 24.0h`) but fails the resolver's previous-day test (`24.5h > 24.167h`) and falls through to `return r.queryDayMidnight` — the entry still reports today's midnight for a trip that belongs to yesterday's service. Because the same value is now also handed to `BuildTripStatus`, `position`, `closestStop` and `scheduleDeviation` for that entry stay 24 hours off, which is the failure mode this PR set out to fix. It is not the rare case it looks like: for a feed with no `block_id`, every trip goes through this path, and at any post-midnight instant the recently-ended/about-to-start fringe is a large share of the returned entries. Widening the resolver's window to the same `runningLate`/`runningEarly` slack the selection uses, or resolving the service day at selection time where `sd.sinceMidnight` is already known, would close it. The same slack gap applies to `trips-for-location`, where entries come from live vehicles that routinely run outside their scheduled span (bug due to `return sinceMidnightNs >= trip.MinArrivalTime.Int64 && sinceMidnightNs <= trip.MaxDepartureTime.Int64`)
+
+https://github.com/OneBusAway/maglev/blob/863ce11549d48e101e149cd6dcbd7f2ba6d3f524/internal/restapi/trips_helper.go#L1288-L1298
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+<sub>- If this code review was useful, please react with 👍. Otherwise, react with 👎.</sub>
+",,,1316-002,false
+1316,5288336175,issue,aaronbrethorst,human,false,false,true,false,"### Code review
+
+Found 1 issue:
+
+1. `resolveDuplicatedBaseTrip` was inserted between `stripNumericSuffix`'s doc comment and `stripNumericSuffix` itself, so the two comment blocks are now contiguous with no blank line between them. Godoc reads the whole run as `resolveDuplicatedBaseTrip`'s doc, which opens ""stripNumericSuffix removes a trailing `.<digits>` from a trip ID..."" — describing a different function — and `stripNumericSuffix` is left with no doc comment at all. On `main` that comment sits directly above `func stripNumericSuffix`. Moving the four orphaned lines back down to just above `stripNumericSuffix` restores both (CONTRIBUTING.md says ""every exported function, type, and package still needs a doc comment starting with its name"")
+
+https://github.com/OneBusAway/maglev/blob/a68221b6c1afbdcaf0c3fa9e4ccc2e88f07c1a10/internal/restapi/trips_for_route_handler.go#L986-L1003
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+<sub>- If this code review was useful, please react with 👍. Otherwise, react with 👎.</sub>
+",,,1316-003,false
+1316,5339268579,issue,aaronbrethorst,human,false,false,true,false,"### Code review
+
+Found 1 issue:
+
+1. `newServiceDateResolver` has no caller anywhere in the PR. `newServiceDateResolverFor` is what `trips_for_location_handler.go:377` and `trips_for_route_handler.go:318` construct through, and `service_date_resolver_test.go` builds resolvers via `newServiceDateResolverFor` or a struct literal — a grep across the head tree turns up `newServiceDateResolver(` exactly once, at its own definition. `go vet` (all `make lint` runs) does not flag unused methods, so nothing in CI catches this. It also reads oddly on its own terms: the doc comment says a lookup failure ""is what callers did before it existed,"" and there are no callers. The stated reason for keeping it is that #1317 calls it, but #1317 is unmerged, so as this stands it lands dead code plus an untested code path on `main` (CONTRIBUTING.md: ""untested code paths and leftover dead code are common review findings""). Deleting it here and letting #1317 reintroduce it — or move the `serviceIDsForDays` call inline — keeps `main` clean either way.
+
+https://github.com/OneBusAway/maglev/blob/b5bb96e56b7c1efc02197d9e83fc1871f5448450/internal/restapi/trips_helper.go#L1268-L1275
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+<sub>- If this code review was useful, please react with 👍. Otherwise, react with 👎.</sub>
+",,,1316-006,false
+1316,5349606479,issue,burma-shave,human,false,false,true,false,"Spec note (non-blocking, no code change needed): documented the `trips-for-location` service-date gap in the wiki — candidates there are selected from live vehicle positions with no scheduled-window filter, so the resolver's ±30/+10 window isn't guaranteed to cover every trip this endpoint can select, unlike `trips-for-route` where selection and resolution now share the same window. This is the write-up the doc comment on `runsOn` already points at.
+
+See the new Implementation Decisions entry: https://github.com/OneBusAway/maglev/wiki/trips-for-location#implementation-decisions",,,1316-007,false
+1316,3801280442,inline,Ahmedhossamdev,human,false,false,true,false,This has no callers. Both handlers pass their service IDs into newServiceDateResolverFor directly. Might as well delete it.,internal/restapi/trips_helper.go,,1316-031,false
+1316,3801283377,inline,Ahmedhossamdev,human,false,false,true,false,"Fine to merge. Just noting this resolves the DUPLICATED run from the base
+trip's schedule window, so an extra run outside that window falls back to the
+query day. Java is slightly more precise here.",internal/restapi/trips_for_route_handler.go,,1316-032,false
+1316,4890748311,review_body,aaronbrethorst,human,false,false,true,false,"This is a real improvement over the status quo, and I want to call out one thing you got right that a sibling PR didn't: you thread the resolved date into `BuildTripStatus` as well as onto `entry.serviceDate`, so both agree. #1286 fixes only the entry field and leaves `status.serviceDate` on today's midnight, which produces two contradictory dates in the same response. Your version doesn't have that problem. Mirroring the existing `resolveActiveTripID` pattern was also the right instinct.
+
+The blocker is a window mismatch.
+
+**`runsOn` requires strict containment, but the handlers select trips by overlap.** `GetActiveTripsWithNullBlockForRoute` (`gtfsdb/query.sql:1146-1157`) selects trips whose span overlaps `[now-30m, now+10m]`, and `trips_for_route_handler.go:178-192` appends previous-day results into `activeTrips` with no further containment check. `runsOn` (`trips_helper.go:1290-1298`) then asks whether the trip's `min_arrival_time`/`max_departure_time` window *contains* the current time-since-midnight.
+
+So a previous-day trip scheduled 23:00–24:10, queried at 00:30, is selected by the query but fails `runsOn` and falls through to the query day — leaving `serviceDate` and the `BuildTripStatus`-derived position and deviation math 24h off. That's precisely the case this PR exists to fix. The same slack applies to trips-for-location, where entries are live vehicles that routinely run outside their scheduled span.
+
+Widening the resolver's window to match the selection window (or resolving from the same overlap test the query uses) should close it.
+
+One other thing worth folding in while you're there: `tripsForRouteHandler` already has `serviceIDs` and `prevServiceIDs` in local scope from identical `GetActiveServiceIDsForDate` calls, and `newServiceDateResolver` re-runs both. Two redundant indexed queries per request on a hot endpoint — passing the existing slices in would be cheaper and is what CONTRIBUTING's Code Reuse section is pointing at.
+
+Ordering note: this sits on #1313 → #1314 → #1315, so those need to land first.
+
+Re-review whenever you've adjusted the window.
+",,,1316-034,false
+1316,4933041489,review_body,aaronbrethorst,human,false,false,true,false,"This will need some changes before merging — please see the notes below.
+
+The service-date logic is right, and my earlier objection is fully addressed. I traced the exact case I raised last time — a previous-day 23:00–24:10 trip queried at 00:30 — by hand through the rewritten `runsOn`, and it now resolves to the previous day. Moving `runningLate`/`runningEarly` out of the handler and next to the resolver so the two can't drift apart was the right structural call, and `service_date_resolver_test.go` covers both that case and its negative. Replacing the bare TODO with a pointer to #800 is appreciated.
+
+One thing to fix:
+
+**`stripNumericSuffix` lost its doc comment.** `resolveDuplicatedBaseTrip` was inserted between the existing comment block and the `func stripNumericSuffix` line, with no blank line between them. So godoc now attributes ""stripNumericSuffix removes a trailing `.<digits>`..."" to `resolveDuplicatedBaseTrip`, and `stripNumericSuffix` reads as undocumented. Moving the comment block back down to its function is the whole fix.
+
+Two notes, neither blocking:
+
+- `runsOn`'s doc comment says it uses ""the same slack the handlers select on."" That's true for `trips-for-route`, but `trips-for-location` selects on live vehicles, not that window.
+- `newServiceDateResolver` issues two `GetActiveServiceIDsForDate` queries per `trips-for-location` request even with zero entries, and one duplicates the call the block logic makes a few lines above. The route handler avoids this via `newServiceDateResolverFor`.
+
+Sequencing, which matters more than the fix above: I've just merged #1329, which rewrites the same lines in `buildTripsForLocationEntries` and removes the `TodayMidnight`/`ServiceDate`/`CurrentLocation` fields your resolver reads. The two changes are complementary in intent — #1329 decides *which timezone's midnight*, this PR decides *which day* — but they don't compose as written. When you rebase, please anchor the resolver on the per-agency midnight rather than reintroducing `TodayMidnight`, otherwise day boundaries go back to being resolved in `agencies[0]`'s zone.
+
+This also still sits on #1315, which sits on #1314 and #1313 — both of those have changes requested and need to clear first. And #1286 is a competing implementation of this PR's route-handler half; worth deciding between them before either lands.
+",,,1316-048,false
+1316,4957537521,review_body,Ahmedhossamdev,human,false,false,true,false,"Nice fix. serviceDate now points at the day the trip actually runs on, which
+matches Java and the spec. Entry and status serviceDate can't drift apart
+since BuildTripStatus stamps the resolved date, and the tests cover the
+past-midnight cases I couldn't reproduce live (Unitrans has no >24:00 trips).
+
+The only nit: the unused
+newServiceDateResolver helper can be dropped. No blockers, ship it.",,,1316-050,false
+1316,4969840395,review_body,aaronbrethorst,human,false,false,true,false,"This is close, and the hard parts are right. Going through my earlier list:
+
+- **The window mismatch (08-09).** Fixed properly. `runsOn` now tests *overlap*
+  with `[now-runningLate, now+runningEarly]` rather than containment. I re-ran my
+  original case by hand: a previous-day trip running 23:00–24:10, queried at
+  00:30, gives `sinceMidnight+24h = 24.5h`, and `min 23h ≤ 24.667h` with
+  `max 24.167h ≥ 24.0h` resolves to the previous day. That's the behavior I wanted.
+- **Redundant service-ID queries.** Gone on both endpoints —
+  `newServiceDateResolverFor` takes what the handler already holds, and
+  trips-for-location does one `serviceIDsForDays` per agency up front with the
+  block lookup reading `services[agencyID].QueryDay`.
+- **`stripNumericSuffix`'s doc comment.** Restored and correctly positioned.
+- **The `runsOn` doc comment overclaiming.** Reworded accurately.
+
+**And the #1329 rebase is the part I want to call out.** This was the thing I
+was most worried about — #1329 removed `TodayMidnight`, `ServiceDate` and
+`CurrentLocation` out from under your resolver, and the easy wrong move was to
+reintroduce them. You didn't: I grepped the head tree and none of those three
+appear anywhere in the two handlers or `trips_helper.go`. Anchoring per agency
+via `request.AgencyLocations[agencyID]` is right, and converting the clock with
+`.In(agencyLocation)` so `wallClockSinceMidnightNs` is computed in the agency's
+own zone is actually *more* correct than #1329 on its own. I also checked the
+`+24h` arithmetic across spring-forward and fall-back and it matches the stored
+GTFS offsets under the wall-clock convention. Nicely done.
+
+**The one thing left: please delete `newServiceDateResolver`**
+(`internal/restapi/trips_helper.go:1272`).
+
+It has zero callers. Both handlers use `newServiceDateResolverFor`; grep finds
+`newServiceDateResolver(` exactly once, at its own definition. `go vet` doesn't
+flag unused methods, so CI can't catch it.
+
+I've read your reply that #1317 will call it, and I understand the reasoning —
+but I don't want to merge dead, untested code into `main` on the strength of a
+PR that isn't merged yet. #1317 has open changes on it, so this could sit unused
+for a while, and ""a future PR will need it"" is exactly the argument
+CONTRIBUTING's dead-code rule exists to decline. Reintroducing three lines in
+#1317 at the moment it actually gains a caller costs you almost nothing and
+keeps `main` honest.
+
+That's the only thing between this and a merge — push that and I'll take it.
+
+Two notes for the record, neither blocking:
+
+- trips-for-location resolves using trips-for-route's ±30/10 window while
+  selecting entries from live vehicles, so a vehicle more than 30 minutes past
+  its scheduled end still resolves to the query day. I marked this non-blocking
+  on 08-14 and I'm holding that; the doc comment now says so, which is the right
+  handling.
+- #1286 is still a competing implementation of this PR's route-handler half.
+  That's mine to adjudicate, not yours — I'll sort it out separately and it
+  won't hold this up.
+",,,1316-054,false
+1316,4977927225,review_body,burma-shave,human,false,false,true,false,just needs aaron's comments addressed,,,1316-055,false

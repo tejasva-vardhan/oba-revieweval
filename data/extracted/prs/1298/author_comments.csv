@@ -1,0 +1,2 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1298,5192915748,issue,3rabiii,human,true,false,false,false,@coderabbitai full review,,,1298-003,false

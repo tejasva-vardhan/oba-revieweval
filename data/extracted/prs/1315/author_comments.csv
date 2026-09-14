@@ -1,0 +1,6 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1315,5240090502,issue,ARCoder181105,human,true,false,false,false,"Thanks — nothing changed here on rebase. The three commits are untouched and still touch only the same four files; the endpoint moved underneath from #1314's query narrowing and stop-reference IDs, reviewed there.
+
+Both follow-ups noted:
+- `agencyLocations` eager `LoadLocation` — agreed, and it running under `includeSchedule=false` where the map is dead is the worse half. Happy to take it once the stack clears.
+- `serviceDate` vs per-agency `timeZone` — agreed it's half the multi-timezone story. Will pick up your issue.",,,1315-003,false

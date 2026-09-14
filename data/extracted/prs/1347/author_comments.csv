@@ -1,0 +1,4 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1347,5314657954,issue,soumajitgh,human,true,false,false,false,@ARCoder181105 done,,,1347-004,false
+1347,3795007448,inline,soumajitgh,human,true,false,false,false,"Addressed in a73efdf. The test now asserts that the arrival’s `SituationIDs` exactly match `TripStatus.SituationIDs`, while retaining the expected alert-ID assertion. I also amended the commit message body to use real line breaks.",internal/restapi/arrivals_and_departures_for_stop_handler_test.go,,1347-007,false
+1347,4949938814,review_body,soumajitgh,human,true,false,false,true,,,,1347-010,false

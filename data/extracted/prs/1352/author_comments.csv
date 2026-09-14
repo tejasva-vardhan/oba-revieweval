@@ -1,0 +1,20 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1352,5304929259,issue,Mister-Raggs,human,true,false,false,false,"Good catch — confirmed and fixed in f69b66f.
+
+It reproduces on the RABA fixture. Both of these instants are Friday 2025-06-13 in `America/Los_Angeles`, and only the second has rolled over to the 14th in UTC:
+
+```
+13:00 local (2025-06-13T20:00Z) -> 15 stops
+22:00 local (2025-06-14T05:00Z) -> 12 stops
+```
+
+The two dates have genuinely different service: `20250613` has 5 active service IDs, `20250614` has 4. So a UTC-hosted instance serving a Pacific agency answered against the wrong service date for roughly seven hours every evening.
+
+Loading the agency location before resolving the parameter fixes both routes to the fallback. Delegating the empty parameter to `ParseTimeParameter` — which already returns the current time in the location it is given — also drops a branch.
+
+`TestStopsForLocationUsesAgencyDateForCurrentTime` covers the absent and malformed cases separately, since they reach the fallback by different paths; each was mutation-verified against its own path.
+
+@aaronbrethorst worth noting this half is a pre-existing defect on the no-`time` path rather than part of #1350, and it changes the service date every request without a `time` param resolves to. I fixed it here because the helper this PR introduces would otherwise read the parameter in one timezone and its own fallback in another, which the doc comment would have been lying about. Happy to split it into its own issue and PR if you'd rather keep #1350 to the format parsing — and either way it may deserve a card entry, since the same fallback pattern likely appears on other endpoints.
+",,,1352-002,false
+1352,5305478309,issue,Mister-Raggs,human,true,false,false,false,@coderabbitai review,,,1352-003,false
+1352,5345322270,issue,Mister-Raggs,human,true,false,false,false,@aaronbrethorst rebased.,,,1352-008,false

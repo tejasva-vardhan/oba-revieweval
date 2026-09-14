@@ -1,0 +1,52 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1317,5243004174,issue,ARCoder181105,human,true,false,false,false,"Hi @aaronbrethorst , Thanks for the review :)
+
+All three addressed.
+
+- **Per-candidate GetStopsByIDs** — hoisted to one lookup over the union of every candidate's stop times, passed into scheduledPositionAtTime, matching emitBlockStops. ctx drops out of that helper since the fetch was its only use. (2c49d60)
+- **Shape points fetched twice** — the entry builder's inline fetch now goes through shapePointsForTrips, so the grouping exists once and repeated shape IDs are deduped before the query, which the inline version did not do. One query remains: that call covers candidates plus live-vehicle trips, a superset of the candidate map.
+- **Shapeless trips** — written into Known limitation, with the nearest-in-bounds-stop fallback named as the follow-up.
+
+On the 200-with-no-body comment: agreed it is pre-existing, leaving it for your separate issue.",,,1317-003,false
+1317,5298799127,issue,ARCoder181105,human,true,false,false,false,"Both fixed, plus three siblings with the identical shape.
+
+- **inServiceTripIDs / fetchStopCoordsForStopTimes** — both routed through queryInBatches. (3be8092)
+- **Three more queries fed by the same candidate set** have the identical sqlc.slice-over-an-unbounded-set shape: scheduledTripIDsInBounds's GetTripsByIDs, stopTimesByTrip's GetStopTimesForTripIDs, shapePointsForTrips's GetShapePointsByIDs. Batched all three, plus the handler's own GetTripsByIDs over visibleTripIDs — pre-existing statement, but this PR is what makes its input unbounded now that scheduledTripIDs feeds into it. (3be8092)
+- **scheduledTripPosition extracted** — applyScheduledTripPositionToStatus and scheduledPositionAtTime now share one projection. (d1b2825)
+- **Positionless live vehicles** now fall through to the scheduled pass. A trip is excluded from it only by having a reported position, not merely a vehicle; a positioned vehicle outside the box stays excluded, since its own position already answers the question. (87ba519)
+
+Branch is rebased on current main and reports MERGEABLE.",,,1317-005,false
+1317,5350423770,issue,ARCoder181105,human,true,false,false,false,"Both fixed.
+
+**1. Silent failure on the stop-coordinate lookup** — `fetchStopCoordsForStopTimes` now returns the error instead of nil, propagated through `scheduledTripIDsInBounds` to `serverErrorResponse`. The two block-snapshot callers keep degrading to zero distances, discarded explicitly at the call site with a comment naming why — they sit behind cached machinery, not a request boundary. (d15e157)
+
+**2. The batching test** — you're right, it never reached a second batch. Now pads with synthetic stop IDs (absent from the DB, so `GetStopsByIDs` just returns fewer rows) interleaved around the real 375, so the deduped set spans two batches with real IDs landing in both — otherwise it only proves the loop ran, not that batch two was concatenated. Guard measures the deduped count now.
+
+Confirmed it bites: reverted `queryInBatches` to a plain query and broke the concatenation locally; the test failed both times, passes restored. `TestCandidateTripIDsForStops_BatchesLargeStopSets` and `TestInServiceTripIDs_BatchesLargeStopSets` did not fail on the concatenation break, so I reworded their comments to claim concatenation coverage rather than bind-limit coverage — same overclaim you flagged. (a91279f)
+
+Filed both non-blocking items:
+- #1367 — batched queries not counting their non-batched binds (`ServiceIds`), including the `GetTripsByBlockIDs` / `GetActiveTripsWithNullBlockForRoute` instances on main
+- #1366 — CodeRabbit flagged `resolveDuplicatedBaseTrip` swallowing non-`ErrNoRows` errors. That's #1316's code, not this PR's, so it's blocked on #1316 merging
+
+#1316 is merged into this branch already, so the rebase is done.",,,1317-007,false
+1317,5460521110,issue,ARCoder181105,human,true,false,false,false,"@burma-shave , I resolved the merge conflict the PR is ready for review
+
+One thing to flag , 
+
+SonarCloud is flagging `sqlc.slice('block_ids')` as a duplicated string literal (rule `plsql:S1192`). However, this is a false positive—`sqlc` requires these inline strings for its arguments in raw `.sql` files, and we cannot replace them with constants. I've left the code as-is; we can ignore this SonarCloud warning or resolve it as 'Won't Fix' in the UI.",,,1317-010,false
+1317,3868915474,inline,ARCoder181105,human,true,false,false,false,@coderabbitai can you confirm is this comment is addressed or not in the recent pushed,internal/restapi/trips_for_location_handler.go,,1317-026,false
+1317,3868924193,inline,ARCoder181105,human,true,false,false,false,"Implemented as designed. Two new queries (`GetBlockIDsForStops`, `GetTripSpansForBlocks`) plus `selectBlockAnchors`, a pure Go function that groups trip spans by block and tests the block's combined `[min(min_arrival), max(max_departure)]` against the window — that's what makes a layover visible, since no individual trip's span covers it. The anchor feeds `computeScheduledBlockSnapshot`, same interpolation `BuildTripStatus` already uses, so the position matches what the entry itself reports. Deduped by the snapshot's resolved `ActiveTripID`, not by anchor, since two anchors near midnight can resolve to the same active trip.
+
+`GetInServiceTripIDsForStops` now excludes blocked trips (`block_id IS NULL`) so they're not evaluated twice through two different projections.
+
+Added a layover regression test (`TestTripsForLocationHandler_LayoverIsDiscoveredViaBlock`) — splits a real shaped trip's stops into two synthetic block trips two hours apart, queries at the midpoint, confirmed it fails without this fix. Plus `TestSelectBlockAnchors` covering the grouping/anchor logic directly (layover, before-window, after-window, single-trip, latest-started-trip, independent blocks). (d24d160)",internal/restapi/trips_for_location_handler.go,,1317-028,false
+1317,3868925559,inline,ARCoder181105,human,true,false,false,false,"Agreed — this was the one place still requiring strict containment while `runsOn` already uses the ±30/+10 window. `GetInServiceTripIDsForStops` now takes `window_start`/`window_end` instead of a bare `since_midnight`, reusing the `runningLate`/`runningEarly` constants. Regenerated via `make models`. (be317dd)",gtfsdb/query.sql,,1317-029,false
+1317,3868929761,inline,ARCoder181105,human,true,false,false,false,"Agreed this is a new failure mode this PR introduced, not the pre-existing `main` shape Aaron pointed at. Added `queryInBatchesReserving`, which subtracts a caller-supplied reserved count from the batch size; `queryInBatches` is now its `reserved=0` case. `inServiceTripIDs` reserves `len(day.serviceIDs)+2` for the `ServiceIds` slice and the two window scalars. `TestQueryInBatchesReserving` covers it directly. Will narrow #1367 to just the pre-existing `main` instances now that this half is fixed here. (187202c)",internal/restapi/trips_for_location_handler.go,,1317-030,false
+1317,3868931426,inline,ARCoder181105,human,true,false,false,false,"Moved to `internal/utils/geometry.go` as `BoundsContain`, next to `CoordinateBounds`. `gtfs_manager.go:413`'s identical inline comparison now calls it too, so there's one implementation instead of two. (3993cc2)",internal/restapi/trips_for_location_handler.go,,1317-031,false
+1317,3868932901,inline,ARCoder181105,human,true,false,false,false,"Fixed — `scheduledTripIDsInBounds` now returns `ctx.Err()` on cancellation instead of a silent partial result. The existing call site's `serverErrorResponse` already dispatches context errors to `clientCanceledResponse`, so no change needed there. (3993cc2)",internal/restapi/trips_for_location_handler.go,,1317-032,false
+1317,5037450182,review_body,ARCoder181105,human,true,false,false,true,,,,1317-042,false
+1317,5037459250,review_body,ARCoder181105,human,true,false,false,true,,,,1317-044,false
+1317,5037460650,review_body,ARCoder181105,human,true,false,false,true,,,,1317-045,false
+1317,5037465101,review_body,ARCoder181105,human,true,false,false,true,,,,1317-046,false
+1317,5037466940,review_body,ARCoder181105,human,true,false,false,true,,,,1317-047,false
+1317,5037468531,review_body,ARCoder181105,human,true,false,false,true,,,,1317-048,false

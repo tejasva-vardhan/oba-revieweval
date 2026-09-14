@@ -1,7 +1,29 @@
 from pathlib import Path
 
+from oba_revieweval.dataset.collect import files_from_unified_diff
 from oba_revieweval.dataset.export import write_pr_export
 from oba_revieweval.dataset.extract import extract_rows, partition_rows, write_extracted_csv
+
+
+def test_files_from_unified_diff_handles_add_delete_rename():
+    diff = """diff --git a/old.go b/new.go
+similarity index 90%
+rename from old.go
+rename to new.go
+diff --git a/gone.go b/gone.go
+deleted file mode 100644
+--- a/gone.go
++++ /dev/null
+diff --git a/added.go b/added.go
+new file mode 100644
+--- /dev/null
++++ b/added.go
+"""
+    files = {item["filename"]: item for item in files_from_unified_diff(diff)}
+    assert files["new.go"]["status"] == "renamed"
+    assert files["new.go"]["previous_filename"] == "old.go"
+    assert files["gone.go"]["status"] == "removed"
+    assert files["added.go"]["status"] == "added"
 
 
 def test_extract_partitions_human_bot_and_author(tmp_path: Path):

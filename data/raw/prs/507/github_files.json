@@ -1,0 +1,26 @@
+[
+  {
+    "filename": "cmd/api/app.go",
+    "status": "modified",
+    "additions": 5,
+    "deletions": 2,
+    "previous_filename": null,
+    "source": "github_files_api"
+  },
+  {
+    "filename": "internal/restapi/recovery_middleware.go",
+    "status": "added",
+    "additions": 80,
+    "deletions": 0,
+    "previous_filename": null,
+    "source": "github_files_api"
+  },
+  {
+    "filename": "internal/restapi/recovery_middleware_test.go",
+    "status": "added",
+    "additions": 157,
+    "deletions": 0,
+    "previous_filename": null,
+    "source": "github_files_api"
+  }
+]

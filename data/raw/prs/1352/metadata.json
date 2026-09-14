@@ -1,0 +1,31 @@
+{
+  "html_url": "https://github.com/OneBusAway/maglev/pull/1352",
+  "merge_sha": "d032d04cd4fe01903c160746922d4f663f3e6424",
+  "title": "Accept the documented time formats in stops-for-location",
+  "review_count": 3,
+  "pr_number": 1352,
+  "state": "closed",
+  "changed_files": [
+    "internal/restapi/stops_for_location_handler.go",
+    "internal/restapi/stops_for_location_handler_test.go"
+  ],
+  "change_kind": "code",
+  "merged": true,
+  "changed_file_count": 2,
+  "author_type": "User",
+  "repo": "OneBusAway/maglev",
+  "author": "Mister-Raggs",
+  "export_version": 1,
+  "collected_at": "2026-09-14",
+  "source": "GitHub REST API",
+  "diff_mode": "merge_parents_three_dot",
+  "diff_base_sha": "710c2119b679bb54d062b192c9e5361c5ba1437d",
+  "diff_head_sha": "5f9f7f9f7f7d3ffe7bc2955682c64521d7736875",
+  "merge_parents": [
+    "710c2119b679bb54d062b192c9e5361c5ba1437d",
+    "5f9f7f9f7f7d3ffe7bc2955682c64521d7736875"
+  ],
+  "stratum": "api_gtfs",
+  "diff_anchored_to_merge_sha": true,
+  "github_file_count": 2
+}

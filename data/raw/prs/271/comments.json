@@ -1,0 +1,17 @@
+{
+  "issue_comments": [],
+  "inline_comments": [],
+  "review_bodies": [
+    {
+      "id": 3736623463,
+      "source": "review_body",
+      "login": "aaronbrethorst",
+      "user_type": "User",
+      "body": "Hey Adel, sharp eye catching this race condition! The debug handler was indeed violating the `GetStaticData()` contract which clearly states \"Caller must hold manager.RLock() before calling this method.\"\n",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-02-01T20:46:15Z"
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "issue_comments": [
+    {
+      "id": 3885282851,
+      "source": "issue",
+      "login": "3rabiii",
+      "user_type": "User",
+      "body": "Thanks for the detailed explanation on the deadlock! \r\nI've removed the internal `manager.RLock()` calls from `GetAlertsForTrip` and added the documentation comment enforcing the lock contract.\r\nRegarding the `GetSituationIDsForTrip` optimization: I'm working on a follow-up PR for that right now! \r\n\r\n@aaronbrethorst \r\ncloses : #353 ",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-02-11T15:44:23Z"
+    }
+  ],
+  "inline_comments": [],
+  "review_bodies": [
+    {
+      "id": 3782222999,
+      "source": "review_body",
+      "login": "aaronbrethorst",
+      "user_type": "User",
+      "body": "Hey Adel -- nice catch identifying the TOCTOU race condition in `GetAlertsForTrip`. You're absolutely right that accessing `manager.GtfsDB` without holding the static mutex is unsafe when `ForceUpdate` can nil it out concurrently. That said, the fix as implemented will introduce a deadlock, so I need to request changes.\n\n## Critical\n\n### Deadlock: Double `RLock()` from the same goroutine\n\nThe PR adds `manager.RLock()` / `manager.RUnlock()` inside `GetAlertsForTrip`, but **all three callers already hold `staticMutex.RLock()`**:\n\n1. **`tripForVehicleHandler`** (`trip_for_vehicle_handler.go:98-99`):\n   ```go\n   api.GtfsManager.RLock()\n   defer api.GtfsManager.RUnlock()\n   // ... later at line 198:\n   alerts := api.GtfsManager.GetAlertsForTrip(r.Context(), vehicle.Trip.ID.ID)\n   ```\n\n2. **`arrivalAndDepartureForStopHandler`** (`arrival_and_departure_for_stop_handler.go:116-117`):\n   ```go\n   api.GtfsManager.RLock()\n   defer api.GtfsManager.RUnlock()\n   // ... later at line 484:\n   alerts := api.GtfsManager.GetAlertsForTrip(r.Context(), tripID)\n   ```\n\n3. **`GetSituationIDsForTrip`** (`trips_helper.go:769-771`):\n   ```go\n   // IMPORTANT: Caller must hold manager.RLock() before calling this method.\n   func (api *RestAPI) GetSituationIDsForTrip(...) []string {\n       alerts := api.GtfsManager.GetAlertsForTrip(ctx, tripID)\n   ```\n\nGo's `sync.RWMutex` is **not reentrant**. The deadlock scenario:\n\n1. **Goroutine A** (HTTP handler): Holds first `RLock()` from the handler\n2. **Goroutine B** (`ForceUpdate`): Calls `Lock()` at `static.go:251` -- blocks, waiting for A to release\n3. **Goroutine A**: Enters `GetAlertsForTrip`, calls `RLock()` again -- **blocks** because B's pending `Lock()` takes priority over new readers\n4. **Deadlock**: A waits for B, B waits for A\n\nThis is documented in Go's [`sync.RWMutex` docs](https://pkg.go.dev/sync#RWMutex):\n\n> If any goroutine calls Lock while the lock is already held by one or more readers, concurrent calls to RLock will block until the writer has acquired (and released) the lock.\n\n### Recommended fix\n\nFollow the existing codebase pattern. Instead of locking inside `GetAlertsForTrip`, add the documentation comment that callers must hold the lock (they already do):\n\n```go\n// GetAlertsForTrip returns alerts matching the trip, its route, or agency.\n// IMPORTANT: Caller must hold manager.RLock() before calling this method.\nfunc (manager *Manager) GetAlertsForTrip(ctx context.Context, tripID string) []gtfs.Alert {\n```\n\nNo `RLock()`/`RUnlock()` calls should be added inside the method. The callers already hold the lock, so the race condition is already protected -- the only thing missing is the documentation comment making this contract explicit.\n\n## Important\n\n### `GetSituationIDsForTrip` duplicates work\n\nWhile reviewing this, I noticed that `GetSituationIDsForTrip` (`trips_helper.go:770-781`) calls `GetAlertsForTrip` and then immediately re-queries `GetTrip` and `GetRoute` to get the `agencyID` -- the exact same DB queries that `GetAlertsForTrip` already performs internally. This isn't introduced by this PR, but it's worth noting as a follow-up optimization.",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-02-10T23:59:46Z"
+    },
+    {
+      "id": 3788071323,
+      "source": "review_body",
+      "login": "aaronbrethorst",
+      "user_type": "User",
+      "body": "Adel, perfect \u2014 this is exactly the right fix. The deadlock-inducing `RLock()`/`RUnlock()` calls are gone, replaced by the documentation comment making the caller-holds-lock contract explicit. Clean and correct.",
+      "inline": false,
+      "path": null,
+      "line": null,
+      "created_at": "2026-02-11T23:51:30Z"
+    }
+  ]
+}

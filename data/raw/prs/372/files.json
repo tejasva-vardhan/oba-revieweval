@@ -1,0 +1,42 @@
+[
+  {
+    "filename": "internal/gtfs/advanced_direction_calculator.go",
+    "status": "modified",
+    "additions": 25,
+    "deletions": 6,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/gtfs/gtfs_manager.go",
+    "status": "modified",
+    "additions": 4,
+    "deletions": 7,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/gtfs/gtfs_manager_test.go",
+    "status": "modified",
+    "additions": 142,
+    "deletions": 17,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/gtfs/static.go",
+    "status": "modified",
+    "additions": 22,
+    "deletions": 2,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/models/test_helpers.go",
+    "status": "modified",
+    "additions": 1,
+    "deletions": 1,
+    "previous_filename": null,
+    "binary": false
+  }
+]

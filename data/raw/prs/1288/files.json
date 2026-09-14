@@ -1,0 +1,18 @@
+[
+  {
+    "filename": "internal/restapi/trips_for_route_handler.go",
+    "status": "modified",
+    "additions": 18,
+    "deletions": 5,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_for_route_handler_test.go",
+    "status": "modified",
+    "additions": 195,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  }
+]

@@ -1,0 +1,822 @@
+diff --git a/internal/restapi/reference_utils.go b/internal/restapi/reference_utils.go
+index 605f896b..2d56d61a 100644
+--- a/internal/restapi/reference_utils.go
++++ b/internal/restapi/reference_utils.go
+@@ -86,6 +86,39 @@ func buildRouteModels(ctx context.Context, agencyID string, routes []gtfsdb.Rout
+ 	return modelRoutes, nil
+ }
+ 
++// routeReferenceByID builds the Route reference for a single route, looked up by
++// its bare (agency-less) route ID. The reference is labelled with the route's own
++// agency, which need not be the agency of the entity that referenced it.
++func (api *RestAPI) routeReferenceByID(ctx context.Context, routeID string) (models.Route, error) {
++	route, err := api.GtfsManager.GtfsDB.Queries.GetRoute(ctx, routeID)
++	if err != nil {
++		return models.Route{}, err
++	}
++
++	routeModels, err := buildRouteModels(ctx, route.AgencyID, []gtfsdb.Route{route})
++	if err != nil {
++		return models.Route{}, err
++	}
++
++	return routeModels[0], nil
++}
++
++// routeReferenceFromStopRow builds a Route reference from a stops-derived route row,
++// labelled with the route's own agency rather than the agency that was queried, so
++// results spanning multiple agencies stay resolvable.
++func routeReferenceFromStopRow(row gtfsdb.GetRoutesForStopsRow) models.Route {
++	return models.NewRoute(
++		utils.FormCombinedID(row.AgencyID, row.ID),
++		row.AgencyID,
++		nulls.StringOrEmpty(row.ShortName),
++		nulls.StringOrEmpty(row.LongName),
++		nulls.StringOrEmpty(row.Desc),
++		models.RouteType(row.Type),
++		nulls.StringOrEmpty(row.Url),
++		nulls.StringOrEmpty(row.Color),
++		nulls.StringOrEmpty(row.TextColor))
++}
++
+ // routeReferencesForStops deduplicates the rows returned by GetRoutesForStops into Route
+ // reference objects, keyed by each row's own agency ID so results spanning multiple
+ // agencies are handled correctly.
+@@ -97,21 +130,44 @@ func routeReferencesForStops(routesRows []gtfsdb.GetRoutesForStopsRow) []models.
+ 			continue
+ 		}
+ 
+-		routesMap[combinedRouteID] = models.NewRoute(
+-			combinedRouteID,
+-			row.AgencyID,
+-			nulls.StringOrEmpty(row.ShortName),
+-			nulls.StringOrEmpty(row.LongName),
+-			nulls.StringOrEmpty(row.Desc),
+-			models.RouteType(row.Type),
+-			nulls.StringOrEmpty(row.Url),
+-			nulls.StringOrEmpty(row.Color),
+-			nulls.StringOrEmpty(row.TextColor))
++		routesMap[combinedRouteID] = routeReferenceFromStopRow(row)
+ 	}
+ 
+ 	return utils.MapValues(routesMap)
+ }
+ 
++// routeReferenceForTrip returns the Route reference for the route a trip runs on.
++// A route already resolved for the trip's stop references is preferred over a fresh
++// lookup, since a trip's own route commonly also serves its closest and next stops.
++func (api *RestAPI) routeReferenceForTrip(ctx context.Context, routeID string, stopRoutes map[string]gtfsdb.GetRoutesForStopsRow) (models.Route, error) {
++	for _, row := range stopRoutes {
++		if row.ID == routeID {
++			return routeReferenceFromStopRow(row), nil
++		}
++	}
++
++	return api.routeReferenceByID(ctx, routeID)
++}
++
++// appendRouteAgencyReference adds a route's own agency to references when it is not
++// the agency the request was scoped to, so the agencyId a cross-agency route
++// reference carries resolves against references.agencies. A lookup that fails costs
++// the reference rather than the response, as with the route itself.
++func (api *RestAPI) appendRouteAgencyReference(ctx context.Context, references *models.ReferencesModel, routeAgencyID, requestAgencyID string) {
++	if routeAgencyID == requestAgencyID {
++		return
++	}
++
++	routeAgency, err := api.GtfsManager.GtfsDB.Queries.GetAgency(ctx, routeAgencyID)
++	if err != nil {
++		api.Logger.Warn("failed to fetch route agency for reference",
++			"agencyID", routeAgencyID, "error", err)
++		return
++	}
++
++	references.Agencies = append(references.Agencies, models.AgencyReferenceFromDatabase(&routeAgency))
++}
++
+ // mergeParentRouteReferences appends any parent-station routes not already present in
+ // routes, so parent stop references never point at an absent route.
+ func mergeParentRouteReferences(routes []models.Route, parentRoutes map[string]gtfsdb.GetRoutesForStopsRow) []models.Route {
+diff --git a/internal/restapi/trip_details_handler.go b/internal/restapi/trip_details_handler.go
+index 3ea56b33..4de37a29 100644
+--- a/internal/restapi/trip_details_handler.go
++++ b/internal/restapi/trip_details_handler.go
+@@ -24,100 +24,99 @@ type TripParams struct {
+ 	VehicleID       string
+ }
+ 
+-// parseTripParams parses and validates the common trip query params
+-// includeScheduleDefault controls the default value of IncludeSchedule when the
+-// parameter is not present in the request (true for trip-details, false for trip-for-vehicle).
+-func (api *RestAPI) parseTripParams(r *http.Request, includeScheduleDefault bool, loc ...*time.Location) (TripParams, map[string][]string) {
+-	params := TripParams{
+-		IncludeTrip:     true,
+-		IncludeSchedule: includeScheduleDefault,
+-		IncludeStatus:   true,
++// TripParamDefaults holds the values the include* params take when the request
++// omits them. They differ per endpoint: trip-details defaults includeTrip and
++// includeSchedule to true, trip-for-vehicle defaults both to false.
++type TripParamDefaults struct {
++	IncludeTrip     bool
++	IncludeSchedule bool
++}
++
++// Layouts accepted by the serviceDate and time params, alongside Unix millis.
++const (
++	serviceDateLayout = "2006-01-02"          // e.g. "2024-06-15"
++	tripTimeLayout    = "2006-01-02_15-04-05" // e.g. "2024-06-15_14-30-00"
++)
++
++// parseEpochOrLayoutTime parses a param accepting either a Unix timestamp in
++// milliseconds or a timestamp in the given layout. A missing param yields a nil
++// time and no error; ok is false only when a supplied value matches neither form.
++func parseEpochOrLayoutTime(value, layout string, loc *time.Location) (parsed *time.Time, ok bool) {
++	if value == "" {
++		return nil, true
+ 	}
+ 
+-	fieldErrors := make(map[string][]string)
++	if epochMillis, err := strconv.ParseInt(value, 10, 64); err == nil {
++		fromEpoch := time.UnixMilli(epochMillis)
++		return &fromEpoch, true
++	}
+ 
+-	// Validate serviceDate â€” accepts either a Unix timestamp in milliseconds
+-	// (e.g. "1718409600000") or a calendar date in yyyy-MM-dd format (e.g. "2024-06-15").
+-	if serviceDateStr := r.URL.Query().Get("serviceDate"); serviceDateStr != "" {
+-		if serviceDateMs, err := strconv.ParseInt(serviceDateStr, 10, 64); err == nil {
+-			serviceDate := time.Unix(serviceDateMs/1000, 0)
+-			params.ServiceDate = &serviceDate
+-		} else {
+-			dateLoc := time.UTC
+-			if len(loc) > 0 && loc[0] != nil {
+-				dateLoc = loc[0]
+-			}
+-			if serviceDate, err := time.ParseInLocation("2006-01-02", serviceDateStr, dateLoc); err == nil {
+-				params.ServiceDate = &serviceDate
+-			} else {
+-				fieldErrors["serviceDate"] = []string{"must be a valid Unix timestamp in milliseconds or a date in yyyy-MM-dd format"}
+-			}
+-		}
++	fromLayout, err := time.ParseInLocation(layout, value, loc)
++	if err != nil {
++		return nil, false
+ 	}
+ 
+-	if includeTripStr := r.URL.Query().Get("includeTrip"); includeTripStr != "" {
+-		if val, err := strconv.ParseBool(includeTripStr); err == nil {
+-			params.IncludeTrip = val
+-		} else {
+-			fieldErrors["includeTrip"] = []string{"must be a boolean value (true/false)"}
+-		}
++	return &fromLayout, true
++}
++
++// localizeTripTimes re-expresses the parsed times in loc, so that downstream
++// Year()/Month()/Day()/Format() calls extract the agency's calendar date rather
++// than UTC's â€” time.Unix() alone would land those endpoints a day out for
++// agencies at a positive UTC offset.
++func localizeTripTimes(params *TripParams, loc *time.Location) {
++	if params.ServiceDate != nil {
++		localized := params.ServiceDate.In(loc)
++		params.ServiceDate = &localized
++	}
++	if params.Time != nil {
++		localized := params.Time.In(loc)
++		params.Time = &localized
+ 	}
++}
+ 
+-	if includeScheduleStr := r.URL.Query().Get("includeSchedule"); includeScheduleStr != "" {
+-		if val, err := strconv.ParseBool(includeScheduleStr); err == nil {
+-			params.IncludeSchedule = val
+-		} else {
+-			fieldErrors["includeSchedule"] = []string{"must be a boolean value (true/false)"}
+-		}
++// parseTripParams parses and validates the common trip query params, applying
++// the caller's per-endpoint defaults to any include* param the request omits.
++func (api *RestAPI) parseTripParams(r *http.Request, defaults TripParamDefaults, loc ...*time.Location) (TripParams, map[string][]string) {
++	query := r.URL.Query()
++
++	// Timestamps without an explicit offset are read in the agency's timezone when
++	// the caller supplies one, and in UTC otherwise.
++	parseLoc := time.UTC
++	if len(loc) > 0 && loc[0] != nil {
++		parseLoc = loc[0]
+ 	}
+ 
+-	if includeStatusStr := r.URL.Query().Get("includeStatus"); includeStatusStr != "" {
+-		if val, err := strconv.ParseBool(includeStatusStr); err == nil {
+-			params.IncludeStatus = val
+-		} else {
+-			fieldErrors["includeStatus"] = []string{"must be a boolean value (true/false)"}
+-		}
++	params := TripParams{
++		IncludeTrip:     defaults.IncludeTrip,
++		IncludeSchedule: defaults.IncludeSchedule,
++		IncludeStatus:   true,
++		VehicleID:       query.Get("vehicleId"),
+ 	}
+ 
+-	// Validate time â€” accepts either a Unix timestamp in milliseconds
+-	// (e.g. "1718459400000") or a datetime in yyyy-MM-dd_HH-mm-ss format (e.g. "2024-06-15_14-30-00").
+-	if timeStr := r.URL.Query().Get("time"); timeStr != "" {
+-		if timeMs, err := strconv.ParseInt(timeStr, 10, 64); err == nil {
+-			timeParam := time.Unix(timeMs/1000, 0)
+-			params.Time = &timeParam
+-		} else {
+-			timeLoc := time.UTC
+-			if len(loc) > 0 && loc[0] != nil {
+-				timeLoc = loc[0]
+-			}
+-			if timeParam, err := time.ParseInLocation("2006-01-02_15-04-05", timeStr, timeLoc); err == nil {
+-				params.Time = &timeParam
+-			} else {
+-				fieldErrors["time"] = []string{"must be a valid Unix timestamp in milliseconds or a datetime in yyyy-MM-dd_HH-mm-ss format"}
+-			}
+-		}
++	fieldErrors := make(map[string][]string)
++
++	if serviceDate, ok := parseEpochOrLayoutTime(query.Get("serviceDate"), serviceDateLayout, parseLoc); ok {
++		params.ServiceDate = serviceDate
++	} else {
++		fieldErrors["serviceDate"] = []string{"must be a valid Unix timestamp in milliseconds or a date in yyyy-MM-dd format"}
+ 	}
+ 
+-	params.VehicleID = r.URL.Query().Get("vehicleId")
++	if timeParam, ok := parseEpochOrLayoutTime(query.Get("time"), tripTimeLayout, parseLoc); ok {
++		params.Time = timeParam
++	} else {
++		fieldErrors["time"] = []string{"must be a valid Unix timestamp in milliseconds or a datetime in yyyy-MM-dd_HH-mm-ss format"}
++	}
++
++	params.IncludeTrip, fieldErrors = utils.ParseBoolParam(query, "includeTrip", params.IncludeTrip, fieldErrors)
++	params.IncludeSchedule, fieldErrors = utils.ParseBoolParam(query, "includeSchedule", params.IncludeSchedule, fieldErrors)
++	params.IncludeStatus, fieldErrors = utils.ParseBoolParam(query, "includeStatus", params.IncludeStatus, fieldErrors)
+ 
+ 	if len(fieldErrors) > 0 {
+ 		return params, fieldErrors
+ 	}
+ 
+-	// If a timezone location was provided, localize serviceDate and time so that
+-	// callers receive times in the agency's timezone by default. This prevents the
+-	// bug where time.Unix(ms/1000, 0) creates a UTC time and downstream
+-	// Year()/Month()/Day()/Format() calls extract the wrong calendar date for
+-	// agencies in positive UTC offsets.
+ 	if len(loc) > 0 && loc[0] != nil {
+-		if params.ServiceDate != nil {
+-			localized := params.ServiceDate.In(loc[0])
+-			params.ServiceDate = &localized
+-		}
+-		if params.Time != nil {
+-			localized := params.Time.In(loc[0])
+-			params.Time = &localized
+-		}
++		localizeTripTimes(&params, loc[0])
+ 	}
+ 
+ 	return params, nil
+@@ -159,7 +158,8 @@ func (api *RestAPI) tripDetailsHandler(w http.ResponseWriter, r *http.Request) {
+ 
+ 	// Parse query params with the agency's timezone so that serviceDate and time
+ 	// are localized at parse time, preventing UTC date-extraction bugs.
+-	params, fieldErrors := api.parseTripParams(r, true, loc)
++	defaults := TripParamDefaults{IncludeTrip: true, IncludeSchedule: true}
++	params, fieldErrors := api.parseTripParams(r, defaults, loc)
+ 	if len(fieldErrors) > 0 {
+ 		api.validationErrorResponse(w, r, fieldErrors)
+ 		return
+diff --git a/internal/restapi/trip_details_handler_test.go b/internal/restapi/trip_details_handler_test.go
+index 7463661d..e6c1d9bd 100644
+--- a/internal/restapi/trip_details_handler_test.go
++++ b/internal/restapi/trip_details_handler_test.go
+@@ -359,7 +359,7 @@ func TestParseTripIdDetailsParams_Unit(t *testing.T) {
+ 	t.Run("explicit params", func(t *testing.T) {
+ 		req := httptest.NewRequest("GET", "/?includeTrip=false&includeSchedule=false&serviceDate=1609459200000", nil)
+ 
+-		params, errs := api.parseTripParams(req, true)
++		params, errs := api.parseTripParams(req, TripParamDefaults{IncludeTrip: true, IncludeSchedule: true})
+ 
+ 		assert.Nil(t, errs)
+ 		assert.False(t, params.IncludeTrip)
+@@ -370,7 +370,7 @@ func TestParseTripIdDetailsParams_Unit(t *testing.T) {
+ 	t.Run("serviceDate yyyy-MM-dd format", func(t *testing.T) {
+ 		req := httptest.NewRequest("GET", "/?serviceDate=2024-06-15", nil)
+ 
+-		params, errs := api.parseTripParams(req, true)
++		params, errs := api.parseTripParams(req, TripParamDefaults{IncludeTrip: true, IncludeSchedule: true})
+ 
+ 		assert.Nil(t, errs)
+ 		require.NotNil(t, params.ServiceDate)
+@@ -382,7 +382,7 @@ func TestParseTripIdDetailsParams_Unit(t *testing.T) {
+ 	t.Run("defaults", func(t *testing.T) {
+ 		req := httptest.NewRequest("GET", "/", nil)
+ 
+-		params, errs := api.parseTripParams(req, true)
++		params, errs := api.parseTripParams(req, TripParamDefaults{IncludeTrip: true, IncludeSchedule: true})
+ 
+ 		assert.Nil(t, errs)
+ 		assert.True(t, params.IncludeTrip)
+@@ -393,7 +393,7 @@ func TestParseTripIdDetailsParams_Unit(t *testing.T) {
+ 	t.Run("invalid params return field errors", func(t *testing.T) {
+ 		req := httptest.NewRequest("GET", "/?time=invalid&serviceDate=invalid", nil)
+ 
+-		_, errs := api.parseTripParams(req, true)
++		_, errs := api.parseTripParams(req, TripParamDefaults{IncludeTrip: true, IncludeSchedule: true})
+ 
+ 		assert.NotNil(t, errs)
+ 		assert.Contains(t, errs, "time")
+@@ -404,7 +404,7 @@ func TestParseTripIdDetailsParams_Unit(t *testing.T) {
+ 	t.Run("time yyyy-MM-dd_HH-mm-ss format", func(t *testing.T) {
+ 		req := httptest.NewRequest("GET", "/?time=2024-06-15_14-30-00", nil)
+ 
+-		params, errs := api.parseTripParams(req, true)
++		params, errs := api.parseTripParams(req, TripParamDefaults{IncludeTrip: true, IncludeSchedule: true})
+ 
+ 		assert.Nil(t, errs)
+ 		require.NotNil(t, params.Time)
+@@ -419,7 +419,7 @@ func TestParseTripIdDetailsParams_Unit(t *testing.T) {
+ 	t.Run("vehicleId is parsed", func(t *testing.T) {
+ 		req := httptest.NewRequest("GET", "/?vehicleId=40_v123", nil)
+ 
+-		params, errs := api.parseTripParams(req, true)
++		params, errs := api.parseTripParams(req, TripParamDefaults{IncludeTrip: true, IncludeSchedule: true})
+ 
+ 		assert.Nil(t, errs)
+ 		assert.Equal(t, "40_v123", params.VehicleID)
+@@ -428,7 +428,7 @@ func TestParseTripIdDetailsParams_Unit(t *testing.T) {
+ 	t.Run("vehicleId defaults to empty", func(t *testing.T) {
+ 		req := httptest.NewRequest("GET", "/", nil)
+ 
+-		params, errs := api.parseTripParams(req, true)
++		params, errs := api.parseTripParams(req, TripParamDefaults{IncludeTrip: true, IncludeSchedule: true})
+ 
+ 		assert.Nil(t, errs)
+ 		assert.Equal(t, "", params.VehicleID)
+diff --git a/internal/restapi/trip_for_vehicle_handler.go b/internal/restapi/trip_for_vehicle_handler.go
+index 2b3eb44f..71a45e3f 100644
+--- a/internal/restapi/trip_for_vehicle_handler.go
++++ b/internal/restapi/trip_for_vehicle_handler.go
+@@ -54,7 +54,7 @@ func (api *RestAPI) tripForVehicleHandler(w http.ResponseWriter, r *http.Request
+ 
+ 	// Parse query params with the agency's timezone so that serviceDate and time
+ 	// are localized at parse time, preventing UTC date-extraction bugs.
+-	params, fieldErrors := api.parseTripParams(r, false, loc)
++	params, fieldErrors := api.parseTripParams(r, TripParamDefaults{}, loc)
+ 	if len(fieldErrors) > 0 {
+ 		api.validationErrorResponse(w, r, fieldErrors)
+ 		return
+@@ -142,7 +142,8 @@ func (api *RestAPI) tripForVehicleHandler(w http.ResponseWriter, r *http.Request
+ 
+ // buildTripForVehicleReferences dereferences the IDs the entry exposes: the
+ // agency, the stops named by the status and schedule blocks, the routes serving
+-// those stops, and â€” when includeTrip is set â€” the scheduled trip record.
++// those stops, and â€” when includeTrip is set or a status block was built â€” the
++// scheduled trip record.
+ func (api *RestAPI) buildTripForVehicleReferences(ctx context.Context, agencyID string, agency gtfsdb.Agency, trip gtfsdb.Trip, status *models.TripStatus, schedule *models.Schedule, includeTrip bool) (*models.ReferencesModel, error) {
+ 	references := models.NewEmptyReferences()
+ 
+@@ -159,25 +160,39 @@ func (api *RestAPI) buildTripForVehicleReferences(ctx context.Context, agencyID
+ 
+ 	routeRefs := make(map[string]models.Route, len(uniqueRouteMap))
+ 	for combinedID, route := range uniqueRouteMap {
+-		routeRefs[combinedID] = models.NewRoute(
+-			combinedID,
+-			route.AgencyID,
+-			route.ShortName.String,
+-			route.LongName.String,
+-			route.Desc.String,
+-			models.RouteType(route.Type),
+-			route.Url.String,
+-			route.Color.String,
+-			route.TextColor.String)
++		routeRefs[combinedID] = routeReferenceFromStopRow(route)
+ 	}
+-	references.Routes = utils.MapValues(routeRefs)
+-
+ 	references.Agencies = append(references.Agencies, models.AgencyReferenceFromDatabase(&agency))
+ 
+-	if includeTrip {
++	// The active trip belongs in references whenever the status block is present,
++	// so includeTrip is only the fallback: it decides the matter solely when no
++	// status block was built.
++	if includeTrip || status != nil {
++		// The trip's routeId must match the ID its route reference is filed under,
++		// which carries the route's own agency rather than the vehicle's. The
++		// vehicle-prefixed ID below is only the fallback for an unresolvable route.
++		combinedRouteID := utils.FormCombinedID(agencyID, trip.RouteID)
++
++		routeRef, err := api.routeReferenceForTrip(ctx, trip.RouteID, uniqueRouteMap)
++		switch {
++		case errors.Is(err, sql.ErrNoRows):
++			// A dangling trips.route_id costs one reference, not the response: the
++			// vehicle and its trip both resolved, and the batch reference builders
++			// likewise omit rows they cannot resolve rather than failing. With no row
++			// to read an agency from, the routeId keeps the vehicle's prefix.
++			api.Logger.Warn("trip references non-existent route",
++				"tripID", trip.ID, "routeID", trip.RouteID, "agencyID", agencyID)
++		case err != nil:
++			return nil, err
++		default:
++			combinedRouteID = routeRef.ID
++			routeRefs[routeRef.ID] = routeRef
++			api.appendRouteAgencyReference(ctx, references, routeRef.AgencyID, agencyID)
++		}
++
+ 		tripRef := models.NewTripReference(
+ 			utils.FormCombinedID(agencyID, trip.ID),
+-			utils.FormCombinedID(agencyID, trip.RouteID),
++			combinedRouteID,
+ 			utils.FormCombinedID(agencyID, trip.ServiceID),
+ 			trip.TripHeadsign.String,
+ 			trip.TripShortName.String,
+@@ -188,6 +203,8 @@ func (api *RestAPI) buildTripForVehicleReferences(ctx context.Context, agencyID
+ 		references.Trips = append(references.Trips, *tripRef)
+ 	}
+ 
++	references.Routes = utils.MapValues(routeRefs)
++
+ 	return references, nil
+ }
+ 
+diff --git a/internal/restapi/trip_for_vehicle_handler_test.go b/internal/restapi/trip_for_vehicle_handler_test.go
+index dda53490..6a3313eb 100644
+--- a/internal/restapi/trip_for_vehicle_handler_test.go
++++ b/internal/restapi/trip_for_vehicle_handler_test.go
+@@ -1,6 +1,7 @@
+ package restapi
+ 
+ import (
++	"context"
+ 	"fmt"
+ 	"log/slog"
+ 	"maps"
+@@ -43,7 +44,9 @@ func setupTestApiWithMockVehicle(t *testing.T) (api *RestAPI, vehicleCombinedID
+ 
+ 	api.GtfsManager.MockAddAgency(testdata.Raba.ID, "unitrans")
+ 	api.GtfsManager.MockAddRoute(combinedRouteID, testdata.Raba.ID, combinedRouteID)
+-	api.GtfsManager.MockAddTrip(trip.ID, testdata.Raba.ID, combinedRouteID)
++	// Deliberately no MockAddTrip: the trip already exists in the fixture DB, and
++	// MockAddTrip is an INSERT OR REPLACE that would wipe its block and shape IDs
++	// in the package-shared test database for every test that runs afterwards.
+ 	api.GtfsManager.MockAddVehicle(mockVehicleID, trip.ID, combinedRouteID)
+ 
+ 	return api, utils.FormCombinedID(testdata.Raba.ID, mockVehicleID)
+@@ -93,9 +96,7 @@ func TestTripForVehicleHandlerEndToEnd(t *testing.T) {
+ 	require.NotEmpty(t, refs.Routes)
+ 	require.NotEmpty(t, refs.Trips)
+ 
+-	// Trip ref must have a non-empty id/routeId. ServiceID is intentionally not
+-	// asserted: the mock trip injected by setupTestApiWithMockVehicle has no
+-	// ServiceID, and asserting on it would be asserting on the mock helper.
++	// Trip ref must have a non-empty id/routeId.
+ 	trip := refs.Trips[0]
+ 	assert.NotEmpty(t, trip.ID)
+ 	assert.NotEmpty(t, trip.RouteID)
+@@ -161,13 +162,6 @@ func TestTripForVehicleHandler_IncludeToggles(t *testing.T) {
+ 		assert.Nil(t, model.Data.Entry.Status, "status should be omitted when includeStatus=false")
+ 	})
+ 
+-	t.Run("includeTrip=false omits trip references", func(t *testing.T) {
+-		_, model := callAPIHandler[TripDetailsResponse](t, api,
+-			tripForVehicleURL(vehicleID, url.Values{"includeTrip": {"false"}}))
+-
+-		assert.Empty(t, model.Data.References.Trips, "trip refs should be empty when includeTrip=false")
+-	})
+-
+ 	t.Run("includeSchedule=true keeps response well-formed", func(t *testing.T) {
+ 		resp, model := callAPIHandler[TripDetailsResponse](t, api,
+ 			tripForVehicleURL(vehicleID, url.Values{"includeSchedule": {"true"}}))
+@@ -215,12 +209,13 @@ func TestTripForVehicleHandler_IncludeToggles(t *testing.T) {
+ 	})
+ 
+ 	t.Run("all-false strips schedule/status/trip refs", func(t *testing.T) {
+-		_, model := callAPIHandler[TripDetailsResponse](t, api,
++		resp, model := callAPIHandler[TripDetailsResponse](t, api,
+ 			tripForVehicleURL(vehicleID, url.Values{
+ 				"includeTrip":     {"false"},
+ 				"includeSchedule": {"false"},
+ 				"includeStatus":   {"false"},
+ 			}))
++		require.Equal(t, http.StatusOK, resp.StatusCode)
+ 
+ 		entry := model.Data.Entry
+ 		assert.NotEmpty(t, entry.TripID)
+@@ -228,10 +223,179 @@ func TestTripForVehicleHandler_IncludeToggles(t *testing.T) {
+ 		assert.Nil(t, entry.Schedule)
+ 		assert.Nil(t, entry.Status)
+ 		assert.Empty(t, model.Data.References.Trips)
++		// The active trip's route rides along with the trip reference, so it is
++		// absent for the same reason: no status block, and includeTrip=false.
++		assert.Empty(t, model.Data.References.Routes)
+ 		assert.NotEmpty(t, model.Data.References.Agencies)
+ 	})
+ }
+ 
++// insertStubTrip adds a bare trip row for tests that need a trip the fixture does
++// not have. Foreign keys are disabled for the insert so the trip may point at a
++// route or service that does not exist. SQLite tracks the setting per connection
++// and only the connection that applied the schema has it on, so the pragma and the
++// insert have to share one pinned connection â€” which is also why MockAddTrip,
++// issuing both on the pool, fails or succeeds depending on the connection it draws.
++func insertStubTrip(t *testing.T, api *RestAPI, tripID, routeID string) {
++	t.Helper()
++	ctx := context.Background()
++
++	conn, err := api.GtfsManager.GtfsDB.DB.Conn(ctx)
++	require.NoError(t, err)
++	defer func() { require.NoError(t, conn.Close()) }()
++
++	var foreignKeysWereOn bool
++	require.NoError(t, conn.QueryRowContext(ctx, `PRAGMA foreign_keys`).Scan(&foreignKeysWereOn))
++
++	_, err = conn.ExecContext(ctx, `PRAGMA foreign_keys = OFF`)
++	require.NoError(t, err)
++	defer func() {
++		if foreignKeysWereOn {
++			_, err := conn.ExecContext(ctx, `PRAGMA foreign_keys = ON`)
++			require.NoError(t, err)
++		}
++	}()
++
++	_, err = conn.ExecContext(ctx,
++		`INSERT INTO trips (id, route_id, service_id) VALUES (?, ?, '')`, tripID, routeID)
++	require.NoError(t, err)
++}
++
++// TestTripForVehicleHandler_MissingRoute verifies that a trip pointing at a
++// route which is not in the database is still served: the response is a 200
++// carrying the trip, with only the unresolvable route reference absent.
++func TestTripForVehicleHandler_MissingRoute(t *testing.T) {
++	api, _ := setupTestApiWithMockVehicle(t)
++
++	const (
++		orphanTripID    = "TRIP_WITH_MISSING_ROUTE"
++		orphanVehicleID = "ORPHAN_ROUTE_VEHICLE"
++		missingRouteID  = "ROUTE_THAT_DOES_NOT_EXIST"
++	)
++
++	insertStubTrip(t, api, orphanTripID, missingRouteID)
++	api.GtfsManager.MockAddVehicle(orphanVehicleID, orphanTripID, missingRouteID)
++
++	// The trip row lands in the package-shared fixture database, so take it back
++	// out rather than leaving a routeless trip behind for later tests.
++	t.Cleanup(func() {
++		_, _ = api.GtfsManager.GtfsDB.DB.ExecContext(context.Background(),
++			`DELETE FROM trips WHERE id = ?`, orphanTripID)
++	})
++
++	// includeTrip=true so the route lookup is reached even though the orphaned
++	// trip has no real-time status to build.
++	resp, model := callAPIHandler[TripDetailsResponse](t, api,
++		tripForVehicleURL(utils.FormCombinedID(testdata.Raba.ID, orphanVehicleID),
++			url.Values{"includeTrip": {"true"}}))
++
++	require.Equal(t, http.StatusOK, resp.StatusCode,
++		"a dangling route reference must not fail the request")
++	assert.Equal(t, http.StatusOK, model.Code)
++
++	assert.Equal(t, utils.FormCombinedID(testdata.Raba.ID, orphanTripID), model.Data.Entry.TripID,
++		"the trip the vehicle is running is still served")
++	assert.NotEmpty(t, model.Data.References.Trips,
++		"the trip reference survives even though its route cannot be resolved")
++	assert.Empty(t, model.Data.References.Routes,
++		"the unresolvable route is simply absent from references")
++}
++
++// TestTripForVehicleHandler_RouteFromAnotherAgency covers a vehicle running a
++// trip whose route belongs to a different agency: the route reference must keep
++// its own agency prefix, or the trip's routeId points at a route the client
++// cannot resolve.
++func TestTripForVehicleHandler_RouteFromAnotherAgency(t *testing.T) {
++	api, _ := setupTestApiWithMockVehicle(t)
++
++	const (
++		otherAgencyID    = "OTHERAGENCY"
++		otherRouteID     = "OTHERROUTE"
++		crossAgencyTrip  = "TRIP_ON_OTHER_AGENCY_ROUTE"
++		crossAgencyVehID = "CROSS_AGENCY_VEHICLE"
++	)
++
++	api.GtfsManager.MockAddAgency(otherAgencyID, "Other Agency")
++	api.GtfsManager.MockAddRoute(otherRouteID, otherAgencyID, "Cross-agency route")
++	insertStubTrip(t, api, crossAgencyTrip, otherRouteID)
++	api.GtfsManager.MockAddVehicle(crossAgencyVehID, crossAgencyTrip, otherRouteID)
++
++	// These rows land in the package-shared fixture database, so take them back
++	// out rather than leaving them behind for later tests.
++	t.Cleanup(func() {
++		ctx := context.Background()
++		_, _ = api.GtfsManager.GtfsDB.DB.ExecContext(ctx, `DELETE FROM trips WHERE id = ?`, crossAgencyTrip)
++		_, _ = api.GtfsManager.GtfsDB.DB.ExecContext(ctx, `DELETE FROM routes WHERE id = ?`, otherRouteID)
++		_, _ = api.GtfsManager.GtfsDB.DB.ExecContext(ctx, `DELETE FROM agencies WHERE id = ?`, otherAgencyID)
++	})
++
++	// includeTrip=true so the route lookup is reached even though the mock trip
++	// has no real-time status to build.
++	resp, model := callAPIHandler[TripDetailsResponse](t, api,
++		tripForVehicleURL(utils.FormCombinedID(testdata.Raba.ID, crossAgencyVehID),
++			url.Values{"includeTrip": {"true"}}))
++
++	require.Equal(t, http.StatusOK, resp.StatusCode)
++
++	require.Len(t, model.Data.References.Trips, 1)
++	require.Len(t, model.Data.References.Routes, 1)
++
++	referencedAgencies := make([]string, 0, len(model.Data.References.Agencies))
++	for _, agency := range model.Data.References.Agencies {
++		referencedAgencies = append(referencedAgencies, agency.ID)
++	}
++	assert.Contains(t, referencedAgencies, testdata.Raba.ID, "the vehicle's own agency")
++	assert.Contains(t, referencedAgencies, otherAgencyID,
++		"the route's agency must be dereferenceable too, or references.routes[0].agencyId resolves to nothing")
++
++	routeRef := model.Data.References.Routes[0]
++	assert.Equal(t, otherAgencyID, routeRef.AgencyID,
++		"the route reference carries the route's own agency, not the vehicle's")
++	assert.Equal(t, utils.FormCombinedID(otherAgencyID, otherRouteID), routeRef.ID)
++	assert.Equal(t, routeRef.ID, model.Data.References.Trips[0].RouteID,
++		"the trip's routeId must resolve against references.routes")
++}
++
++// TestTripForVehicleHandler_TripReferences covers where the active trip's
++// reference comes from: the status path adds it whenever the status block is
++// present, and includeTrip only matters once includeStatus=false.
++func TestTripForVehicleHandler_TripReferences(t *testing.T) {
++	api, vehicleID := setupTestApiWithMockVehicle(t)
++
++	t.Run("includeTrip=false still yields trip refs via the status path", func(t *testing.T) {
++		_, model := callAPIHandler[TripDetailsResponse](t, api,
++			tripForVehicleURL(vehicleID, url.Values{"includeTrip": {"false"}}))
++
++		require.NotNil(t, model.Data.Entry.Status, "status is present by default")
++		assert.NotEmpty(t, model.Data.References.Trips,
++			"the active trip reaches references via the status path regardless of includeTrip")
++		assert.NotEmpty(t, model.Data.References.Routes,
++			"the active trip's route accompanies it in references")
++	})
++
++	t.Run("includeStatus=false with includeTrip=false omits trip refs", func(t *testing.T) {
++		_, model := callAPIHandler[TripDetailsResponse](t, api,
++			tripForVehicleURL(vehicleID, url.Values{
++				"includeStatus": {"false"},
++				"includeTrip":   {"false"},
++			}))
++
++		assert.Empty(t, model.Data.References.Trips,
++			"with no status block and includeTrip=false nothing adds the trip")
++	})
++
++	t.Run("includeTrip=true with includeStatus=false yields trip refs", func(t *testing.T) {
++		_, model := callAPIHandler[TripDetailsResponse](t, api,
++			tripForVehicleURL(vehicleID, url.Values{
++				"includeStatus": {"false"},
++				"includeTrip":   {"true"},
++			}))
++
++		assert.NotEmpty(t, model.Data.References.Trips,
++			"includeTrip is what adds the trip when there is no status block")
++	})
++}
++
+ func TestTripForVehicleHandlerWithServiceDate(t *testing.T) {
+ 	api, vehicleID := setupTestApiWithMockVehicle(t)
+ 
+@@ -299,22 +463,27 @@ func TestParseTripForVehicleParams_Unit(t *testing.T) {
+ 	defer api.Shutdown()
+ 
+ 	t.Run("explicit params", func(t *testing.T) {
+-		req := httptest.NewRequest("GET", "/?includeStatus=false&time=1609459200000", nil)
++		// The millisecond remainder is deliberate: it is what a truncating
++		// seconds-based conversion would drop.
++		const timeMillis = 1609459200123
++		req := httptest.NewRequest("GET",
++			fmt.Sprintf("/?includeStatus=false&time=%d", timeMillis), nil)
+ 
+-		params, errs := api.parseTripParams(req, false)
++		params, errs := api.parseTripParams(req, TripParamDefaults{})
+ 
+ 		assert.Nil(t, errs)
+ 		assert.False(t, params.IncludeStatus)
+-		assert.NotNil(t, params.Time)
++		require.NotNil(t, params.Time)
++		assert.Equal(t, int64(timeMillis), params.Time.UnixMilli())
+ 	})
+ 
+ 	t.Run("defaults for trip-for-vehicle", func(t *testing.T) {
+ 		req := httptest.NewRequest("GET", "/", nil)
+ 
+-		params, errs := api.parseTripParams(req, false)
++		params, errs := api.parseTripParams(req, TripParamDefaults{})
+ 
+ 		assert.Nil(t, errs)
+-		assert.True(t, params.IncludeTrip)
++		assert.False(t, params.IncludeTrip)
+ 		assert.False(t, params.IncludeSchedule)
+ 		assert.True(t, params.IncludeStatus)
+ 	})
+@@ -322,7 +491,7 @@ func TestParseTripForVehicleParams_Unit(t *testing.T) {
+ 	t.Run("invalid params return field errors", func(t *testing.T) {
+ 		req := httptest.NewRequest("GET", "/?serviceDate=invalid&time=invalid", nil)
+ 
+-		_, errs := api.parseTripParams(req, false)
++		_, errs := api.parseTripParams(req, TripParamDefaults{})
+ 
+ 		require.NotNil(t, errs)
+ 		assert.Contains(t, errs, "serviceDate")
+diff --git a/internal/utils/api.go b/internal/utils/api.go
+index e9308a06..9a723e60 100644
+--- a/internal/utils/api.go
++++ b/internal/utils/api.go
+@@ -388,6 +388,28 @@ func ParseRequiredStringParam(params url.Values, key string, fieldErrors map[str
+ 	return val, fieldErrors
+ }
+ 
++// ParseBoolParam retrieves a boolean value from the provided URL query parameters,
++// falling back to fallback when the key is absent. A value that is not a boolean
++// records a field error and leaves the fallback in place.
++func ParseBoolParam(params url.Values, key string, fallback bool, fieldErrors map[string][]string) (bool, map[string][]string) {
++	if fieldErrors == nil {
++		fieldErrors = make(map[string][]string)
++	}
++
++	val := params.Get(key)
++	if val == "" {
++		return fallback, fieldErrors
++	}
++
++	parsed, err := strconv.ParseBool(val)
++	if err != nil {
++		fieldErrors[key] = append(fieldErrors[key], "must be a boolean value (true/false)")
++		return fallback, fieldErrors
++	}
++
++	return parsed, fieldErrors
++}
++
+ // ClampRadius restricts a radius value to MaxSearchRadiusInMeters
+ func ClampRadius(radius float64) float64 {
+ 	if radius > models.MaxSearchRadiusInMeters {
+diff --git a/internal/utils/api_test.go b/internal/utils/api_test.go
+index c17c9933..e18e37cc 100644
+--- a/internal/utils/api_test.go
++++ b/internal/utils/api_test.go
+@@ -1157,3 +1157,58 @@ func TestClampRadius(t *testing.T) {
+ 	assert.Equal(t, 5000.0, ClampRadius(5000.0))
+ 	assert.Equal(t, float64(models.MaxSearchRadiusInMeters), ClampRadius(models.MaxSearchRadiusInMeters+10000.0))
+ }
++
++func TestParseBoolParam(t *testing.T) {
++	tests := []struct {
++		name          string
++		params        url.Values
++		fallback      bool
++		expectedValue bool
++		expectError   bool
++	}{
++		{
++			name:          "Explicit true overrides the fallback",
++			params:        url.Values{"includeTrip": []string{"true"}},
++			fallback:      false,
++			expectedValue: true,
++		},
++		{
++			name:          "Explicit false overrides the fallback",
++			params:        url.Values{"includeTrip": []string{"false"}},
++			fallback:      true,
++			expectedValue: false,
++		},
++		{
++			name:          "Missing parameter takes the fallback",
++			params:        url.Values{},
++			fallback:      true,
++			expectedValue: true,
++		},
++		{
++			name:          "Empty value takes the fallback",
++			params:        url.Values{"includeTrip": []string{""}},
++			fallback:      true,
++			expectedValue: true,
++		},
++		{
++			name:          "Non-boolean value errors and keeps the fallback",
++			params:        url.Values{"includeTrip": []string{"maybe"}},
++			fallback:      true,
++			expectedValue: true,
++			expectError:   true,
++		},
++	}
++
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			value, fieldErrors := ParseBoolParam(tt.params, "includeTrip", tt.fallback, nil)
++
++			assert.Equal(t, tt.expectedValue, value)
++			if tt.expectError {
++				assert.Contains(t, fieldErrors, "includeTrip")
++			} else {
++				assert.Empty(t, fieldErrors)
++			}
++		})
++	}
++}

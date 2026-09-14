@@ -1,0 +1,110 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+702,4061438413,issue,aaronbrethorst,human,false,false,true,false,"@tejasva-vardhan oops, I just noticed you merged `main` into this branch instead of rebasing. Please rebase on top of main and push up the changes. Ideally, rebase and squash into a single commit.",,,702-003,false
+702,3946924119,review_body,aaronbrethorst,human,false,false,true,false,"Hey Tejasva, the `withTransaction` helper is a well-crafted abstraction — it correctly handles both the caller-owned and self-managed transaction cases, and the mechanical refactoring across all 7 functions is faithful. Nice work eliminating that boilerplate.
+
+A few things to address before this can merge.
+
+## Critical Issues
+
+### 1. The `Stops` field addition needs its own PR
+
+This PR bundles two unrelated changes: the transaction helper refactor (mechanical, low-risk) and the addition of a `Stops []string` field to `ScheduleForRouteEntry` + handler.
+
+These should be separate PRs for a couple of reasons:
+- They have different risk profiles and review concerns
+- The `Stops` field work deserves its own discussion — PR #700 just *removed* `stops` and `trips` from the OpenAPI spec to align it with the current code. This PR is now re-adding `stops` (as `[]string` instead of `[]Stop`), which puts the response back out of alignment with the spec. If the intent is to add stops support to the endpoint, that should go through as a deliberate feature PR with the spec updated to match.
+
+**Recommendation:** Remove the `Stops` changes from this PR (revert the model and handler changes) and submit the transaction refactor on its own. If you want to add `stops` to schedule-for-route, open a follow-up PR that also updates the OpenAPI spec.
+
+## Important Issues
+
+### 2. `db.Begin()` → `db.BeginTx(ctx, nil)` is a behavioral change
+
+Six of the seven refactored functions previously used `db.Begin()` (context-unaware). The new `withTransaction` uses `c.DB.BeginTx(ctx, nil)`, which will cancel the transaction if the context is cancelled. For long-running bulk imports (shapes can be 10k+ rows), a context cancellation could now abort work that previously would have completed.
+
+This is likely an improvement, and your PR description mentions it, but it should be called out explicitly as a **deliberate behavioral change**, not just a standardization note.
+
+### 3. Wrap errors in `withTransaction` for debuggability
+
+Since you already have the `label` parameter, wrap the `BeginTx` and `Commit` errors:
+
+```go
+newTx, err := c.DB.BeginTx(ctx, nil)
+if err != nil {
+ return fmt.Errorf(""failed to begin transaction for %s: %w"", label, err)
+}
+// ...
+if err := newTx.Commit(); err != nil {
+ return fmt.Errorf(""failed to commit transaction for %s: %w"", label, err)
+}
+return nil
+```
+
+Small change, big payoff when debugging import failures across 7 callers.
+
+### 4. `bulkInsertCalendarDates` lost its logging
+
+Every other refactored function retains `LogOperation` calls for ""inserting_X"" and ""X_inserted"". `bulkInsertCalendarDates` had its logger removed entirely — it's now the only bulk insert function with zero operational logging. Add the start/end log messages for consistency.
+
+## Suggestions
+
+### 5. Document the `tx != nil` contract
+
+The godoc says ""does not commit"" for non-nil tx, but doesn't mention rollback responsibility. Add: ""When tx is non-nil, the caller is responsible for committing or rolling back the transaction on error.""
+
+## Strengths
+
+- The `withTransaction` helper is well-designed — the nil/non-nil tx branching is clean and correct
+- `defer SafeRollbackWithLogging` correctly handles the post-commit case (it checks for ""already committed"" and silently returns)
+- The mechanical refactoring is faithful — insert logic within each function is preserved exactly
+- Good PR description with clear impact summary
+
+## Recommended Action: Request Changes
+
+1. **Remove the `Stops` field changes** — submit as a separate PR with OpenAPI spec alignment
+2. **Wrap errors** in `withTransaction` (BeginTx + Commit) using the `label` param
+3. **Restore logging** to `bulkInsertCalendarDates`
+4. **Document** the `tx != nil` rollback contract in the godoc
+5. Rebase onto main (to pick up #700) and confirm `make test` + `make lint` pass
+",,,702-005,false
+702,3949300658,review_body,aaronbrethorst,human,false,false,true,false,"Hey Tejasva, you've done a thorough job addressing all the feedback from the previous round. The error wrapping with labels, the restored logging in `bulkInsertCalendarDates`, the godoc update for the `tx != nil` contract, and the clean separation of the `Stops`/`Trips` removal -- all exactly as requested.
+
+There's nothing left to change -- this PR is ready to merge. The `withTransaction` helper is a clean abstraction that eliminates real boilerplate while preserving behavior faithfully across all seven call sites.",,,702-006,false
+702,3977954040,review_body,aaronbrethorst,human,false,false,true,false,"Hey Tejasva, the rebase looks clean — single squashed commit on top of main, all tests pass, and every item from the previous review rounds is addressed.
+
+## Prior Review Status
+
+All items from the previous reviews have been resolved:
+- **Critical (Stops field in wrong PR)**: Reverted — `Stops` and `Trips` fields removed from `ScheduleForRouteEntry`, handler, and tests
+- **Important (error wrapping)**: `BeginTx` and `Commit` errors now wrapped with `label` for debuggability
+- **Important (calendar dates logging)**: `bulkInsertCalendarDates` now has start/end `LogOperation` calls matching all other bulk functions
+- **Important (BeginTx behavioral change)**: Acknowledged in PR description
+- **Suggestion (godoc contract)**: `withTransaction` godoc now documents caller rollback responsibility for non-nil tx
+- **Rebase request**: Clean single-commit rebase, no merge commits
+
+## Critical Issues (0 found)
+
+None.
+
+## Important Issues (0 found)
+
+None.
+
+## Suggestions (0 found)
+
+None.
+
+## Strengths
+
+- The `withTransaction` helper is well-designed — the nil/non-nil tx branching is clean and correct
+- `defer SafeRollbackWithLogging` correctly handles the post-commit case
+- Mechanical refactoring is faithful across all 7 functions — insert logic preserved exactly
+- Clean separation of concerns: the `Stops`/`Trips` revert keeps this PR focused
+- Excellent rebase execution — single squashed commit with a clear message
+
+## Recommended Action
+
+**Verdict: Merge**
+
+This is ready to go. The `withTransaction` helper eliminates ~70 lines of boilerplate while preserving behavior faithfully across all seven call sites. Clean work.
+",,,702-007,false

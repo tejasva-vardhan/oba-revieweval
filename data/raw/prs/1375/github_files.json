@@ -1,0 +1,18 @@
+[
+  {
+    "filename": "internal/restapi/search_stops_handler.go",
+    "status": "modified",
+    "additions": 13,
+    "deletions": 1,
+    "previous_filename": null,
+    "source": "github_files_api"
+  },
+  {
+    "filename": "internal/restapi/search_stops_handler_test.go",
+    "status": "modified",
+    "additions": 68,
+    "deletions": 0,
+    "previous_filename": null,
+    "source": "github_files_api"
+  }
+]

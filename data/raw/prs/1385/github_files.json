@@ -1,0 +1,42 @@
+[
+  {
+    "filename": "CONTRIBUTING.md",
+    "status": "modified",
+    "additions": 1,
+    "deletions": 1,
+    "previous_filename": null,
+    "source": "github_files_api"
+  },
+  {
+    "filename": "internal/restapi/schedule_for_stop_handler.go",
+    "status": "modified",
+    "additions": 12,
+    "deletions": 9,
+    "previous_filename": null,
+    "source": "github_files_api"
+  },
+  {
+    "filename": "internal/restapi/schedule_for_stop_handler_test.go",
+    "status": "modified",
+    "additions": 62,
+    "deletions": 0,
+    "previous_filename": null,
+    "source": "github_files_api"
+  },
+  {
+    "filename": "internal/utils/validation.go",
+    "status": "modified",
+    "additions": 6,
+    "deletions": 14,
+    "previous_filename": null,
+    "source": "github_files_api"
+  },
+  {
+    "filename": "internal/utils/validation_test.go",
+    "status": "modified",
+    "additions": 0,
+    "deletions": 61,
+    "previous_filename": null,
+    "source": "github_files_api"
+  }
+]

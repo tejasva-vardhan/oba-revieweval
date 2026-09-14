@@ -1,0 +1,175 @@
+diff --git a/internal/models/current_time.go b/internal/models/current_time.go
+index 8e9ae9ee..de0d21ea 100644
+--- a/internal/models/current_time.go
++++ b/internal/models/current_time.go
+@@ -14,11 +14,20 @@ type CurrentTimeData struct {
+ 	References ReferencesModel  `json:"references"`
+ }
+ 
+-// NewCurrentTimeData creates a CurrentTimeData structure based on a provided Time
++// NewCurrentTimeData creates a CurrentTimeData structure based on a provided Time,
++// formatted in UTC. Use NewCurrentTimeDataInLocation to format in a specific timezone.
+ func NewCurrentTimeData(t time.Time) CurrentTimeData {
++	return NewCurrentTimeDataInLocation(t, time.UTC)
++}
++
++// NewCurrentTimeDataInLocation creates a CurrentTimeData formatted in the given location.
++// Pass the agency's IANA timezone (e.g. time.LoadLocation("America/Los_Angeles")) so that
++// readableTime reflects the agency's local time with the correct UTC offset, matching
++// the behavior of the Java OBA reference server.
++func NewCurrentTimeDataInLocation(t time.Time, loc *time.Location) CurrentTimeData {
+ 	return CurrentTimeData{
+ 		Entry: CurrentTimeModel{
+-			ReadableTime: t.Format(time.RFC3339),
++			ReadableTime: t.In(loc).Format(time.RFC3339),
+ 			Time:         NewModelTime(t),
+ 		},
+ 		References: *NewEmptyReferences(),
+diff --git a/internal/models/current_time_test.go b/internal/models/current_time_test.go
+index a58724f3..d2615c21 100644
+--- a/internal/models/current_time_test.go
++++ b/internal/models/current_time_test.go
+@@ -118,7 +118,8 @@ func TestNewCurrentTimeData(t *testing.T) {
+ 			// Verify the time fields
+ 			expectedMillis := tc.testTime.UnixMilli()
+ 			assert.Equal(t, expectedMillis, result.Entry.Time.UnixMilli())
+-			expectedReadable := tc.testTime.Format(time.RFC3339)
++			// NewCurrentTimeData formats in UTC regardless of the input location.
++			expectedReadable := tc.testTime.UTC().Format(time.RFC3339)
+ 			assert.Equal(t, expectedReadable, result.Entry.ReadableTime)
+ 
+ 			// Verify that references is initialized
+diff --git a/internal/restapi/current_time_handler.go b/internal/restapi/current_time_handler.go
+index f3e1210b..d7425989 100644
+--- a/internal/restapi/current_time_handler.go
++++ b/internal/restapi/current_time_handler.go
+@@ -2,20 +2,37 @@ package restapi
+ 
+ import (
+ 	"net/http"
++	"time"
+ 
+ 	"maglev.onebusaway.org/internal/models"
+ )
+ 
+ // currentTimeHandler returns the server's current time as a JSON response.
++// readableTime is formatted in the primary agency's local timezone.
+ func (api *RestAPI) currentTimeHandler(w http.ResponseWriter, r *http.Request) {
+-	// Health Check: fail if GTFS data is invalid
+ 	if !api.GtfsManager.IsReady() {
+ 		http.Error(w, "Service Unavailable: GTFS data invalid", http.StatusServiceUnavailable)
+ 		return
+ 	}
+ 
+-	timeData := models.NewCurrentTimeData(api.Clock.Now())
++	loc := agencyTimezone(api, r)
++	timeData := models.NewCurrentTimeDataInLocation(api.Clock.Now(), loc)
+ 	response := models.NewOKResponse(timeData, api.Clock)
+ 
+ 	api.sendResponse(w, r, response)
+ }
++
++// agencyTimezone returns the primary agency's IANA timezone location.
++// Falls back to UTC if the timezone cannot be loaded.
++func agencyTimezone(api *RestAPI, r *http.Request) *time.Location {
++	agencies, err := api.GtfsManager.GetAgencies(r.Context())
++	if err != nil || len(agencies) == 0 {
++		return time.UTC
++	}
++	loc, err := loadAgencyLocation(agencies[0].ID, agencies[0].Timezone)
++	if err != nil {
++		api.Logger.Warn("failed to load agency timezone", "agencyID", agencies[0].ID, "error", err)
++		return time.UTC
++	}
++	return loc
++}
+diff --git a/internal/restapi/current_time_handler_test.go b/internal/restapi/current_time_handler_test.go
+index b916f5da..b0dad897 100644
+--- a/internal/restapi/current_time_handler_test.go
++++ b/internal/restapi/current_time_handler_test.go
+@@ -1,11 +1,17 @@
+ package restapi
+ 
+ import (
++	"context"
++	"io"
++	"log/slog"
+ 	"net/http"
++	"net/http/httptest"
+ 	"testing"
+ 	"time"
+ 
+ 	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++	"maglev.onebusaway.org/internal/app"
+ 	"maglev.onebusaway.org/internal/clock"
+ 	"maglev.onebusaway.org/internal/models"
+ )
+@@ -85,7 +91,64 @@ func TestCurrentTimeHandler_DeterministicTime(t *testing.T) {
+ 	entry := responseData["entry"].(map[string]any)
+ 	assert.Equal(t, float64(expectedMs), entry["time"], "Entry time should equal mock clock time")
+ 
+-	// Readable time should match
+-	expectedReadable := fixedTime.Format(time.RFC3339)
+-	assert.Equal(t, expectedReadable, entry["readableTime"], "Readable time should match mock clock")
++	// readableTime must be formatted in the agency's local timezone (America/Los_Angeles).
++	agencyLoc, err := time.LoadLocation("America/Los_Angeles")
++	require.NoError(t, err)
++	expectedReadable := fixedTime.In(agencyLoc).Format(time.RFC3339)
++	assert.Equal(t, expectedReadable, entry["readableTime"], "readableTime should use agency timezone")
++}
++
++func TestAgencyTimezone_EmptyAgencies(t *testing.T) {
++	manager := newTestManagerNoData(t)
++	manager.MarkReady()
++
++	application := &app.Application{
++		GtfsManager: manager,
++		Clock:       clock.RealClock{},
++	}
++	api := NewRestAPI(application)
++	api.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
++
++	req := httptest.NewRequest(http.MethodGet, "/", nil)
++	loc := agencyTimezone(api, req)
++	assert.Equal(t, time.UTC, loc)
++}
++
++func TestAgencyTimezone_InvalidTimezone(t *testing.T) {
++	manager := newTestManagerNoData(t)
++	manager.MarkReady()
++
++	_, err := manager.GtfsDB.DB.ExecContext(context.Background(),
++		`INSERT INTO agencies (id, name, url, timezone) VALUES (?, ?, ?, ?)`,
++		"test-agency", "Test Agency", "http://example.com", "Not/AReal_Timezone",
++	)
++	require.NoError(t, err)
++
++	application := &app.Application{
++		GtfsManager: manager,
++		Clock:       clock.RealClock{},
++	}
++	api := NewRestAPI(application)
++	api.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
++
++	req := httptest.NewRequest(http.MethodGet, "/", nil)
++	loc := agencyTimezone(api, req)
++	assert.Equal(t, time.UTC, loc)
++}
++
++func TestAgencyTimezone_DBError(t *testing.T) {
++	manager := newTestManagerNoData(t)
++	manager.MarkReady()
++	require.NoError(t, manager.GtfsDB.Close())
++
++	application := &app.Application{
++		GtfsManager: manager,
++		Clock:       clock.RealClock{},
++	}
++	api := NewRestAPI(application)
++	api.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
++
++	req := httptest.NewRequest(http.MethodGet, "/", nil)
++	loc := agencyTimezone(api, req)
++	assert.Equal(t, time.UTC, loc)
+ }

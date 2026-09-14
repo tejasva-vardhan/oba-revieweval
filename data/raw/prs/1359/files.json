@@ -1,0 +1,10 @@
+[
+  {
+    "filename": "internal/restapi/routes_for_location_handler_test.go",
+    "status": "modified",
+    "additions": 115,
+    "deletions": 11,
+    "previous_filename": null,
+    "binary": false
+  }
+]

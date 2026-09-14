@@ -1,0 +1,146 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1347,5301860523,issue,coderabbitai[bot],bot,false,false,false,false," 
+ 
+
+[![Review Change Stack](https://storage.googleapis.com/coderabbit_public_assets/review-stack-in-coderabbit-ui.svg)](https://app.coderabbit.ai/change-stack/OneBusAway/maglev/pull/1347?utm_source=github_walkthrough&utm_medium=github&utm_campaign=change_stack)
+
+ 
+ 
+
+No actionable comments were generated in the recent review. 🎉
+
+ 
+ ℹ️ Recent review info 
+
+ 
+ ⚙️ Run configuration 
+
+**Configuration used**: Repository UI
+
+**Review profile**: ASSERTIVE
+
+**Plan**: Pro Plus
+
+**Run ID**: `3ea09825-d3b2-49cd-a0a0-61d53e14344c`
+
+ 
+
+ 
+ 📥 Commits 
+
+Reviewing files that changed from the base of the PR and between d9d5baa563d76590cd34c77a67376b277a617b5d and a73efdfa9642c8d2655500d2b34890b519e61819.
+
+ 
+
+ 
+ 📒 Files selected for processing (1) 
+
+* `internal/restapi/arrivals_and_departures_for_stop_handler_test.go`
+
+ 
+
+**Included review availability:** Your plan includes up to 1 review per rolling hour; 0 remain after this review.
+
+ 
+
+---
+
+
+
+ 
+ 
+
+ 
+ 📝 Walkthrough 
+
+## Walkthrough
+
+The arrivals handler reuses situations resolved by `BuildTripStatus`. A new end-to-end test verifies route-level alert IDs on arrivals and in `references.situations`.
+
+### Changes
+
+**Arrival situation references**
+
+|Layer / File(s)|Summary|
+|---|---|
+|**Resolved situations and reference validation** `internal/restapi/arrivals_and_departures_for_stop_handler.go`, `internal/restapi/arrivals_and_departures_for_stop_handler_test.go`|The handler adds `BuildTripStatus` situations to the shared collector and derives arrival situation IDs from them. The test verifies route-alert references in the affected arrival and response references.|
+
+**Estimated code review effort:** 2 (Simple) | ~10 minutes
+
+ 
+**Merge Risk:** _⚪ Minimal_ · up to `a73ef`
+
+This is a small localized change that reuses resolved situation references for arrivals and adds regression coverage; no actionable merge-blocking risk remains beyond normal checks and review.
+ 
+
+**Possibly related PRs**
+
+- [OneBusAway/maglev#1000](https://github.com/OneBusAway/maglev/pull/1000) — Changes `BuildTripStatus` and the arrivals handler’s status flow used by this update.
+- [OneBusAway/maglev#1313](https://github.com/OneBusAway/maglev/pull/1313) — Introduces the trip situation and shared collector changes reused here.
+- [OneBusAway/maglev#1314](https://github.com/OneBusAway/maglev/pull/1314) — Refactors situation references in the arrivals/departures handler extended by this update.
+
+**Suggested reviewers:** `burma-shave`, `aaronbrethorst`
+
+ 
+
+ 
+ 
+
+ 
+ 🚥 Pre-merge checks | ✅ 4 | ❌ 1 
+
+### ❌ Failed checks (1 warning)
+
+| Check name | Status | Explanation | Resolution |
+| :----------------: | :--------- | :------------------------------------------------------------------------------------ | :--------------------------------------------------------------------------------- |
+| Docstring Coverage | ⚠️ Warning | Docstring coverage is 33.33% which is insufficient. The required threshold is 80.00%. | Write docstrings for the functions missing them to satisfy the coverage threshold. |
+
+ 
+ ✅ Passed checks (4 passed) 
+
+| Check name | Status | Explanation |
+| :------------------------: | :------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Description Check | ✅ Passed | Check skipped - CodeRabbit’s high-level summary is enabled. |
+| Title check | ✅ Passed | The title clearly summarizes the primary change: reusing resolved situations for arrivals. |
+| Linked Issues check | ✅ Passed | The implementation reuses BuildTripStatus situations, removes duplicate alert resolution, and adds the required route-alert reference test for issue `#1341`. |
+| Out of Scope Changes check | ✅ Passed | All changes support issue `#1341` by updating arrival situation handling and adding focused regression coverage. |
+
+ 
+
+ 
+
+ 
+ 
+
+---
+
+Thanks for using [CodeRabbit](https://coderabbit.ai?utm_source=oss&utm_medium=github&utm_campaign=OneBusAway/maglev&utm_content=1347)! It's free for OSS, and your support helps us grow. If you like it, consider giving us a shout-out.
+
+ 
+ ❤️ Share 
+
+- [X](https://twitter.com/intent/tweet?text=I%20just%20used%20%40coderabbitai%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20the%20proprietary%20code.%20Check%20it%20out%3A&url=https%3A//coderabbit.ai)
+- [Mastodon](https://mastodon.social/share?text=I%20just%20used%20%40coderabbitai%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20the%20proprietary%20code.%20Check%20it%20out%3A%20https%3A%2F%2Fcoderabbit.ai)
+- [Reddit](https://www.reddit.com/submit?title=Great%20tool%20for%20code%20review%20-%20CodeRabbit&text=I%20just%20used%20CodeRabbit%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20proprietary%20code.%20Check%20it%20out%3A%20https%3A//coderabbit.ai)
+- [LinkedIn](https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fcoderabbit.ai&mini=true&title=Great%20tool%20for%20code%20review%20-%20CodeRabbit&summary=I%20just%20used%20CodeRabbit%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20proprietary%20code)
+
+ 
+
+
+ Comment `@coderabbitai help` to get the list of available commands. 
+
+ ",,,1347-001,false
+1347,5314640444,issue,sonarqubecloud[bot],bot,false,false,false,false,"## [![Quality Gate Passed](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/checks/QualityGateBadge/qg-passed-20px.png 'Quality Gate Passed')](https://sonarcloud.io/dashboard?id=OneBusAway_maglev&pullRequest=1347) **Quality Gate passed** 
+Issues 
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0 New issues](https://sonarcloud.io/project/issues?id=OneBusAway_maglev&pullRequest=1347&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true) 
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/accepted-16px.png '') [0 Accepted issues](https://sonarcloud.io/project/issues?id=OneBusAway_maglev&pullRequest=1347&issueStatuses=ACCEPTED)
+
+Measures 
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0 Security Hotspots](https://sonarcloud.io/project/security_hotspots?id=OneBusAway_maglev&pullRequest=1347&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true) 
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0.0% Coverage on New Code](https://sonarcloud.io/component_measures?id=OneBusAway_maglev&pullRequest=1347&metric=new_coverage&view=list) 
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0.0% Duplication on New Code](https://sonarcloud.io/component_measures?id=OneBusAway_maglev&pullRequest=1347&metric=new_duplicated_lines_density&view=list) 
+ 
+ 
+[See analysis details on SonarQube Cloud](https://sonarcloud.io/dashboard?id=OneBusAway_maglev&pullRequest=1347)
+
+",,,1347-003,false

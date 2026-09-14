@@ -1,0 +1,74 @@
+[
+  {
+    "filename": "gtfsdb/client.go",
+    "status": "modified",
+    "additions": null,
+    "deletions": null,
+    "previous_filename": null,
+    "source": "github_pull_diff"
+  },
+  {
+    "filename": "gtfsdb/db.go",
+    "status": "modified",
+    "additions": null,
+    "deletions": null,
+    "previous_filename": null,
+    "source": "github_pull_diff"
+  },
+  {
+    "filename": "gtfsdb/helpers.go",
+    "status": "modified",
+    "additions": null,
+    "deletions": null,
+    "previous_filename": null,
+    "source": "github_pull_diff"
+  },
+  {
+    "filename": "gtfsdb/helpers_test.go",
+    "status": "modified",
+    "additions": null,
+    "deletions": null,
+    "previous_filename": null,
+    "source": "github_pull_diff"
+  },
+  {
+    "filename": "gtfsdb/models.go",
+    "status": "modified",
+    "additions": null,
+    "deletions": null,
+    "previous_filename": null,
+    "source": "github_pull_diff"
+  },
+  {
+    "filename": "gtfsdb/query.sql",
+    "status": "modified",
+    "additions": null,
+    "deletions": null,
+    "previous_filename": null,
+    "source": "github_pull_diff"
+  },
+  {
+    "filename": "gtfsdb/query.sql.go",
+    "status": "modified",
+    "additions": null,
+    "deletions": null,
+    "previous_filename": null,
+    "source": "github_pull_diff"
+  },
+  {
+    "filename": "gtfsdb/schema.sql",
+    "status": "modified",
+    "additions": null,
+    "deletions": null,
+    "previous_filename": null,
+    "source": "github_pull_diff"
+  },
+  {
+    "filename": "gtfsdb/stop_agency_test.go",
+    "status": "added",
+    "additions": null,
+    "deletions": null,
+    "previous_filename": null,
+    "source": "github_pull_diff"
+  }
+]

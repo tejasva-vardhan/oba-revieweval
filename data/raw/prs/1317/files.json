@@ -1,0 +1,106 @@
+[
+  {
+    "filename": "gtfsdb/db.go",
+    "status": "modified",
+    "additions": 30,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "gtfsdb/query.sql",
+    "status": "modified",
+    "additions": 57,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "gtfsdb/query.sql.go",
+    "status": "modified",
+    "additions": 214,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/gtfs/gtfs_manager.go",
+    "status": "modified",
+    "additions": 1,
+    "deletions": 3,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/reference_utils.go",
+    "status": "modified",
+    "additions": 24,
+    "deletions": 5,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/reference_utils_test.go",
+    "status": "modified",
+    "additions": 39,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/scheduled_block_helper.go",
+    "status": "modified",
+    "additions": 44,
+    "deletions": 20,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/scheduled_block_helper_test.go",
+    "status": "modified",
+    "additions": 77,
+    "deletions": 3,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/service_date_resolver_test.go",
+    "status": "modified",
+    "additions": 13,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_for_location_handler.go",
+    "status": "modified",
+    "additions": 492,
+    "deletions": 23,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_for_location_handler_test.go",
+    "status": "modified",
+    "additions": 525,
+    "deletions": 3,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_helper.go",
+    "status": "modified",
+    "additions": 57,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/utils/geometry.go",
+    "status": "modified",
+    "additions": 6,
+    "deletions": 0,
+    "previous_filename": null,
+    "binary": false
+  }
+]

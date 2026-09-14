@@ -3,24 +3,32 @@
     "filename": "gtfsdb/helpers.go",
     "status": "modified",
     "additions": 151,
-    "deletions": 196
+    "deletions": 196,
+    "previous_filename": null,
+    "binary": false
   },
   {
     "filename": "internal/models/schedule_for_route.go",
     "status": "modified",
     "additions": 0,
-    "deletions": 2
+    "deletions": 2,
+    "previous_filename": null,
+    "binary": false
   },
   {
     "filename": "internal/restapi/schedule_for_route_handler.go",
     "status": "modified",
     "additions": 0,
-    "deletions": 6
+    "deletions": 6,
+    "previous_filename": null,
+    "binary": false
   },
   {
     "filename": "internal/restapi/schedule_for_route_handler_test.go",
     "status": "modified",
     "additions": 1,
-    "deletions": 8
+    "deletions": 8,
+    "previous_filename": null,
+    "binary": false
   }
 ]

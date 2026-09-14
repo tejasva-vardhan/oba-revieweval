@@ -1,0 +1,10 @@
+[
+  {
+    "id": 4010411899,
+    "login": "aaronbrethorst",
+    "user_type": "User",
+    "state": "APPROVED",
+    "body": "Ahmed \u2014 this is a well-executed follow-through on the feedback from #722. The double-locking issue was a real contention point on the hot path (every API request), and switching from the thread-safe `lru.Cache` to the raw `simplelru.LRU` is the right fix since the external `sync.Mutex` already provides all the synchronization needed.\n\nNotably, this PR correctly wraps `Stop()` with the mutex \u2014 `simplelru.LRU.Purge()` mutates internal state and is not thread-safe, so it must go through the same lock as every other access. PR #755, which addresses the same issue, doesn't include this. While the current production shutdown ordering happens to be safe (because `srv.Shutdown()` drains in-flight requests before `api.Shutdown()` calls `Stop()`), omitting the lock would be safety-by-coincidence rather than safety-by-design. Your approach maintains a consistent locking invariant: every access to `limiters` goes through `rl.mu`.\n\n---\n\n### Critical Issues (0 found)\n\nNone.\n\n### Important Issues (0 found)\n\nNone.\n\n### Suggestions (0 found)\n\nNone.\n\n### Strengths\n\n- Correctly identifies that `simplelru.LRU` requires external synchronization for **all** access paths, including `Stop()/Purge()`\n- The concurrent deduplication test is strengthened from `assert.NotNil` to `assert.Same`, which actually verifies the invariant (all goroutines get the same limiter instance, not just a non-nil one)\n- Test `mu.Lock()/Unlock()` wrapping around direct `limiters.Get()` and `.Len()` calls correctly reflects the new thread-safety contract\n- The `route_handler_test.go` bounds check is a useful defensive fix against type assertion panics\n- All tests pass including the previously-flaky `VehicleWithNilID` test (via `MockClearServiceIDsCache()`)\n- Lint clean",
+    "submitted_at": "2026-03-25T22:59:20Z"
+  }
+]

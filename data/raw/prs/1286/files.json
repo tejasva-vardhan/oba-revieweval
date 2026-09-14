@@ -1,0 +1,26 @@
+[
+  {
+    "filename": "internal/gtfs/gtfs_manager_mock.go",
+    "status": "modified",
+    "additions": 46,
+    "deletions": 2,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_for_route_handler.go",
+    "status": "modified",
+    "additions": 76,
+    "deletions": 89,
+    "previous_filename": null,
+    "binary": false
+  },
+  {
+    "filename": "internal/restapi/trips_for_route_handler_test.go",
+    "status": "modified",
+    "additions": 221,
+    "deletions": 11,
+    "previous_filename": null,
+    "binary": false
+  }
+]

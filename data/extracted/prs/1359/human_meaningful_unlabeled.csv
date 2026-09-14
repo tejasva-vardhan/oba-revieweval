@@ -1,0 +1,75 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1359,5339061617,issue,aaronbrethorst,human,false,false,true,false,"### Code review
+
+Found 1 issue:
+
+1. `TestRoutesForLocationDefaultRadiusMatches600Meters` pins the no-query default radius at 600m and documents that as the spec value, but the spec this PR is closing to (#1230) says the fallback is ""500m vs 10km based on the presence of a query"" — and the hosted Java API returns `radius=500` for a no-parameter request. `models.DefaultSearchRadiusInMeters = 600` is the current (wrong) value, so this test locks in the divergence and will have to be edited again when the constant is corrected. The 10km query fallback (`QuerySearchRadiusInMeters`) already matches the spec, which makes 600 look like a typo rather than an intentional choice. Either fix the constant to 500 in this PR and pin that, or rename the test/comment so it reads as ""current behavior"" instead of ""the spec default"".
+
+https://github.com/OneBusAway/maglev/blob/1824d6d03f061afb14dc9750fde31cc3dc962c31/internal/restapi/routes_for_location_handler_test.go#L181-L208
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+ - If this code review was useful, please react with 👍. Otherwise, react with 👎. 
+",,,1359-003,false
+1359,4957854608,review_body,Ahmedhossamdev,human,false,false,true,false,"Test coverage is solid and the behavior changes match Java (default maxCount
+10 with the 50 clamp, includeReferences gating, and the exact maxCount error
+message all check out against RoutesForLocationAction.java and against the
+hosted Java API). Gate is green.
+
+One thing to fix before merge: the default-radius test pins 600m, but Java's
+no-query default is 500m and the hosted Java returns exactly the radius=500
+set for a no-parameter request. Change DefaultSearchRadiusInMeters to 500 and
+the test then pins the right value. Note the diff is not test-only: it also
+carries the maxCount default and includeReferences behavior changes.",,,1359-012,false
+1359,4969639462,review_body,aaronbrethorst,human,false,false,true,false,"The tests here are genuinely good, which is why I want to get one detail right
+before it lands.
+
+What works well: `TestRoutesForLocationHandlerSituationReferences` seeds a real
+route-scoped alert and asserts on its actual ID, and then re-requests with
+`includeReferences=false` to prove suppression against a populated source
+rather than an empty one — that second half is the part most people skip, and
+it's what makes the assertion mean something. And pinning the radius by
+*equivalence* (`default == radius=600`, `default ⊃ radius=500`) instead of
+hardcoding a distance is a nice technique; it fails for the right reason.
+
+**The blocker — `TestRoutesForLocationDefaultRadiusMatches600Meters`
+(internal/restapi/routes_for_location_handler_test.go:182-208):**
+
+The test and its doc comment pin 600m as ""the no-query default radius,"" but
+600 looks like a bug, not the spec. Issue #1230 — the issue this PR is closing —
+says the fallback is ""500m vs 10km based on the presence of a query,"" and
+@Ahmedhossamdev verified the hosted Java API returns exactly the `radius=500`
+set for a no-parameter request. `QuerySearchRadiusInMeters = 10000` already
+matches the 10km half, which makes `DefaultSearchRadiusInMeters = 600` the odd
+one out. Locking 600 in with a test named `Matches600Meters` makes it *harder*
+to fix later, because the fix now also has to argue with a test that says the
+current value is correct.
+
+One correction to the suggestion in the thread, though: please **don't** just
+change the constant to 500 in this PR.
+`models.DefaultSearchRadiusInMeters` is shared — `internal/gtfs/location_params.go:30`
+uses it as the `BoundsFromParams` fallback, so flipping it silently changes the
+default search area for stops-for-location and trips-for-location too. That's a
+real behavior change across three endpoints and deserves its own PR and its own
+tests, not a drive-by in a test-coverage change.
+
+So what I'd like here is the narrow version: drop the 600m test from this PR
+(or keep it and reword the name and comment to say it pins *current* behavior,
+not the spec, with a `TODO` referencing a new issue), and open a separate issue
+for the 500-vs-600 discrepancy noting the shared-constant blast radius. I'm
+happy to take that follow-up PR.
+
+Two smaller notes, neither blocking:
+
+- `TestRoutesForLocationHandlerMaxCountZeroFieldErrorMessage` sits right next to
+  the existing `TestRoutesForLocationHandlerMaxCountLessThanOrEqualZero`, which
+  already covers `maxCount=0`. CONTRIBUTING.md prefers table-driven tests for
+  multiple cases of the same handler — folding the message assertion into the
+  existing test would read better.
+- Its comment says ""the spec quotes"" that message, but `testdata/openapi.yml`
+  has no `fieldErrors` schema; the string only exists in
+  `internal/utils/api.go`. Worth softening the wording.
+
+Also, ordering: this is stacked on #1357 and #1358. I've approved both, so once
+they land, rebase and this is a short round trip.
+",,,1359-013,false

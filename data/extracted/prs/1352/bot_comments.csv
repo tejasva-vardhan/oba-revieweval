@@ -1,0 +1,192 @@
+pr_id,comment_id,source,author_login,actor_class,is_pr_author,is_study_author,eligible_as_independent_gold_candidate,is_process_only,text,path,class,atomic_issue_id,in_reference_set
+1352,5304645256,issue,coderabbitai[bot],bot,false,false,false,false,"<!-- This is an auto-generated comment: summarize by coderabbit.ai -->
+<!-- review_stack_entry_start -->
+
+[![Review Change Stack](https://storage.googleapis.com/coderabbit_public_assets/review-stack-in-coderabbit-ui.svg)](https://app.coderabbit.ai/change-stack/OneBusAway/maglev/pull/1352?utm_source=github_walkthrough&utm_medium=github&utm_campaign=change_stack)
+
+<!-- review_stack_entry_end -->
+<!-- recent_review_start -->
+
+No actionable comments were generated in the recent review. 🎉
+
+<details>
+<summary>ℹ️ Recent review info</summary>
+
+<details>
+<summary>⚙️ Run configuration</summary>
+
+**Configuration used**: Repository UI
+
+**Review profile**: ASSERTIVE
+
+**Plan**: Pro Plus
+
+**Run ID**: `77c41864-7785-4ce5-8ae8-5954df63149a`
+
+</details>
+
+<details>
+<summary>📥 Commits</summary>
+
+Reviewing files that changed from the base of the PR and between f69b66f9673511f1bbbfa4db33b8abf740d04fda and 5f9f7f9f7f7d3ffe7bc2955682c64521d7736875.
+
+</details>
+
+<details>
+<summary>📒 Files selected for processing (2)</summary>
+
+* `internal/restapi/stops_for_location_handler.go`
+* `internal/restapi/stops_for_location_handler_test.go`
+
+</details>
+
+**Included review availability:** Your plan provides up to 1 included review per hour; 0 remain after this review.
+
+</details>
+
+---
+
+
+
+<!-- recent_review_end -->
+<!-- walkthrough_start -->
+
+<details>
+<summary>📝 Walkthrough</summary>
+
+## Walkthrough
+
+The handler now uses `queryTimeForStops` to resolve service dates from documented time formats, agency timezones, and fallback values. Tests cover valid, malformed, absent, and UTC-midnight time parameters.
+
+### Changes
+
+**Stops-for-location time handling**
+
+|Layer / File(s)|Summary|
+|---|---|
+|**Agency-local query time resolution** <br> `internal/restapi/stops_for_location_handler.go`|`stopsForLocationHandler` delegates service-date selection to `queryTimeForStops`. The helper parses request times in the first agency’s timezone and applies fallback behavior.|
+|**Time parameter validation** <br> `internal/restapi/stops_for_location_handler_test.go`|Tests cover epoch milliseconds, date-time, date-only, malformed, and absent `time` values. Additional tests verify agency-local date handling across UTC midnight.|
+
+**Estimated code review effort:** 3 (Moderate) | ~20 minutes
+
+<!-- final_review_risk_start -->
+**Merge Risk:** _⚪ Minimal_ · up to `5f9f7`
+
+The change corrects documented time parsing and agency-date fallback behavior with targeted tests and no actionable merge-blocking risk remains beyond normal review.
+<!-- final_review_risk_end -->
+
+**Possibly related PRs**
+
+- [OneBusAway/maglev#1035](https://github.com/OneBusAway/maglev/pull/1035): Updates related REST API date and time parsing for another handler.
+- [OneBusAway/maglev#1106](https://github.com/OneBusAway/maglev/pull/1106): Updates time-parameter parsing and service-date fallback logic in REST API handlers.
+- [OneBusAway/maglev#1149](https://github.com/OneBusAway/maglev/pull/1149): Updates related REST location handlers to honor the `time` query parameter.
+
+**Suggested labels:** `LGTM`
+
+**Suggested reviewers:** `arcoder181105`, `burma-shave`
+
+</details>
+
+<!-- walkthrough_end -->
+<!-- pre_merge_checks_walkthrough_start -->
+
+<details>
+<summary>🚥 Pre-merge checks | ✅ 5</summary>
+
+<details>
+<summary>✅ Passed checks (5 passed)</summary>
+
+|         Check name         | Status   | Explanation                                                                                                             |
+| :------------------------: | :------- | :---------------------------------------------------------------------------------------------------------------------- |
+|      Description Check     | ✅ Passed | Check skipped - CodeRabbit’s high-level summary is enabled.                                                             |
+|         Title check        | ✅ Passed | The title clearly summarizes the primary change: support for documented time formats in stops-for-location.             |
+|     Linked Issues check    | ✅ Passed | The changes implement issue `#1350` by using ParseTimeParameter and testing formatted, malformed, and absent time values. |
+| Out of Scope Changes check | ✅ Passed | The timezone fallback fix and related tests support the requested time resolution behavior and are not out of scope.    |
+|     Docstring Coverage     | ✅ Passed | No functions found in the changed files to evaluate docstring coverage. Skipping docstring coverage check.              |
+
+</details>
+
+</details>
+
+<!-- pre_merge_checks_walkthrough_end -->
+<!-- tips_start -->
+
+---
+
+Thanks for using [CodeRabbit](https://coderabbit.ai?utm_source=oss&utm_medium=github&utm_campaign=OneBusAway/maglev&utm_content=1352)! It's free for OSS, and your support helps us grow. If you like it, consider giving us a shout-out.
+
+<details>
+<summary>❤️ Share</summary>
+
+- [X](https://twitter.com/intent/tweet?text=I%20just%20used%20%40coderabbitai%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20the%20proprietary%20code.%20Check%20it%20out%3A&url=https%3A//coderabbit.ai)
+- [Mastodon](https://mastodon.social/share?text=I%20just%20used%20%40coderabbitai%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20the%20proprietary%20code.%20Check%20it%20out%3A%20https%3A%2F%2Fcoderabbit.ai)
+- [Reddit](https://www.reddit.com/submit?title=Great%20tool%20for%20code%20review%20-%20CodeRabbit&text=I%20just%20used%20CodeRabbit%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20proprietary%20code.%20Check%20it%20out%3A%20https%3A//coderabbit.ai)
+- [LinkedIn](https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fcoderabbit.ai&mini=true&title=Great%20tool%20for%20code%20review%20-%20CodeRabbit&summary=I%20just%20used%20CodeRabbit%20for%20my%20code%20review%2C%20and%20it%27s%20fantastic%21%20It%27s%20free%20for%20OSS%20and%20offers%20a%20free%20trial%20for%20proprietary%20code)
+
+</details>
+
+
+<sub>Comment `@coderabbitai help` to get the list of available commands.</sub>
+
+<!-- tips_end -->",,,1352-001,false
+1352,5305478767,issue,coderabbitai[bot],bot,false,false,false,false,"<!-- This is an auto-generated reply by CodeRabbit -->
+<!-- CodeRabbit review command invocation: abe51c7b-40a4-4e08-ac9f-8127c518180e -->
+<details>
+<summary>⚠️ Action not completed</summary>
+
+Already reviewed.
+
+> Note: CodeRabbit is an incremental review system and does not re-review already reviewed commits. This command is applicable only when automatic reviews are paused.
+
+</details>",,,1352-004,false
+1352,5339575265,issue,sonarqubecloud[bot],bot,false,false,false,false,"## [![Quality Gate Passed](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/checks/QualityGateBadge/qg-passed-20px.png 'Quality Gate Passed')](https://sonarcloud.io/dashboard?id=OneBusAway_maglev&pullRequest=1352) **Quality Gate passed**  
+Issues  
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0 New issues](https://sonarcloud.io/project/issues?id=OneBusAway_maglev&pullRequest=1352&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true)  
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/accepted-16px.png '') [0 Accepted issues](https://sonarcloud.io/project/issues?id=OneBusAway_maglev&pullRequest=1352&issueStatuses=ACCEPTED)
+
+Measures  
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0 Security Hotspots](https://sonarcloud.io/project/security_hotspots?id=OneBusAway_maglev&pullRequest=1352&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true)  
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0.0% Coverage on New Code](https://sonarcloud.io/component_measures?id=OneBusAway_maglev&pullRequest=1352&metric=new_coverage&view=list)  
+![](https://sonarsource.github.io/sonarcloud-github-static-resources/v2/common/passed-16px.png '') [0.0% Duplication on New Code](https://sonarcloud.io/component_measures?id=OneBusAway_maglev&pullRequest=1352&metric=new_duplicated_lines_density&view=list)  
+  
+<!-- sqra-placement-anchor -->
+[See analysis details on SonarQube Cloud](https://sonarcloud.io/dashboard?id=OneBusAway_maglev&pullRequest=1352)
+
+",,,1352-007,false
+1352,3790461319,inline,Copilot,bot,false,false,false,false,"`queryTimeForStops` only uses the agency timezone when a non-empty `time` param is provided. For an absent or malformed `time`, it falls back to `api.Clock.Now()` in the clock’s location (often UTC), which can select the wrong service date around local midnight and also contradicts the function comment / trips-for-location behavior (which uses `Now().In(currentLocation)`).",internal/restapi/stops_for_location_handler.go,,1352-010,false
+1352,4944903296,review_body,copilot-pull-request-reviewer[bot],bot,false,false,false,false,"## Pull request overview
+
+This pull request fixes `stops-for-location`’s `time` query parameter parsing so it correctly accepts the documented formats (epoch millis, `yyyy-MM-dd_HH-mm-ss`, and date-only) instead of silently mis-parsing the string form as a small epoch-millis value.
+
+**Changes:**
+- Replaces the handler’s `fmt.Sscanf`-based time parsing with `utils.ParseTimeParameter` and introduces a helper (`queryTimeForStops`) to resolve the service-date selection time.
+- Adjusts time resolution to use an agency timezone (matching the approach used in `trips-for-location`) and keeps legacy behavior of serving malformed `time` values (HTTP 200) by falling back to “now”.
+- Adds a table-driven test covering accepted formats, malformed values, and absent `time`, asserting consistent stop lists across accepted representations.
+
+### Reviewed changes
+
+Copilot reviewed 2 out of 2 changed files in this pull request and generated 1 comment.
+
+| File | Description |
+| ---- | ----------- |
+| internal/restapi/stops_for_location_handler.go | Uses `ParseTimeParameter` via a new helper to resolve the query time used for active-service date selection. |
+| internal/restapi/stops_for_location_handler_test.go | Adds coverage ensuring documented time formats are accepted and produce consistent stop lists. |
+
+
+
+
+
+
+
+---
+
+💡 <a href=""/OneBusAway/maglev/new/main?filename=.github/skills/code-review/SKILL.md"" class=""Link--inTextBlock"" target=""_blank"" rel=""noopener noreferrer"">Add a `code-review` agent skill</a> or configure MCP servers for context-aware, tailored reviews. <a href=""https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review#mcp-servers-and-agent-skills"" class=""Link--inTextBlock"" target=""_blank"" rel=""noopener noreferrer"">Learn more in the docs.</a>",,,1352-011,false
+1352,4946594338,review_body,copilot-pull-request-reviewer[bot],bot,false,false,false,false,"## Pull request overview
+
+Copilot reviewed 2 out of 2 changed files in this pull request and generated no new comments.
+
+
+
+
+
+",,,1352-012,false
