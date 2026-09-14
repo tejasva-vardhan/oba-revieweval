@@ -22,6 +22,7 @@ See [research_questions.md](research_questions.md) and the frozen [protocol.md](
 | Human labels | Frozen 2026-09-14. Primary reference set = 75 defect/design findings. See `docs/human_annotation.md`. |
 | Static-analysis baseline | Phase 6A complete. Pinned `golangci-lint` 2.13.2 on merge-SHA trees. See `docs/static_analysis.md`. |
 | LLM A pipeline | Phase 6B engineering pilot ready (`#1404`, `#702`, `#1428`). Live calls need `OPENAI_API_KEY`. See `docs/llm_pilot.md`. |
+| LLM context preflight | Local size and leak check complete. No API calls. See `docs/llm_preflight.md`. |
 | Report | Not written |
 
 Do not cite precision/recall numbers from this repository. None exist yet.

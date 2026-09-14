@@ -19,7 +19,8 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from oba_revieweval.models.constants import PILOT_PRS  # noqa: E402
+from oba_revieweval.dataset.corpus import load_recommended  # noqa: E402
+from oba_revieweval.models.constants import PILOT_PRS, repo_root  # noqa: E402
 from oba_revieweval.models.runner import run_pilot  # noqa: E402
 from oba_revieweval.models.secrets import MissingAPIKey  # noqa: E402
 
@@ -28,6 +29,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--pilot", action="store_true", help="run the three Phase 6B PRs only")
     parser.add_argument("--pr", type=int, action="append", dest="prs")
+    parser.add_argument(
+        "--approve-full-corpus",
+        action="store_true",
+        help="required to send every recommended PR after the 3-PR pilot is approved",
+    )
     args = parser.parse_args()
     if args.prs:
         selected = tuple(args.prs)
@@ -43,6 +49,18 @@ def main() -> int:
     extra = [number for number in selected if number not in PILOT_PRS]
     if extra and args.pilot:
         print(f"--pilot does not accept extra PRs: {extra}", file=sys.stderr)
+        return 2
+    recommended = {
+        int(row["pr_number"])
+        for row in load_recommended(repo_root() / "data" / "candidates" / "recommended_corpus.csv")
+    }
+    if set(selected) == recommended and not args.approve_full_corpus:
+        print(
+            "Refusing to run the full corpus before the 3-PR pilot is "
+            "explicitly approved. Use --pilot now, or pass "
+            "--approve-full-corpus after that approval.",
+            file=sys.stderr,
+        )
         return 2
     try:
         result = run_pilot(prs=selected)
