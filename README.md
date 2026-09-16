@@ -1,12 +1,14 @@
 # OBA-ReviewEval
 
-Exploratory evaluation of **LLM findings vs `golangci-lint` vs human review** on production Go pull requests from [OneBusAway/maglev](https://github.com/OneBusAway/maglev).
+Student study: when humans review merged pull requests on [OneBusAway/maglev](https://github.com/OneBusAway/maglev) (a Go transit backend), do a static analyzer and a language model raise the same defect and design issues?
 
-This is a **pilot / domain-transfer case study**, not a new benchmark and not a claim of state-of-the-art performance.
+This is a pilot case study, not a published paper and not a new benchmark. Do not cite precision or recall numbers from this repository. None exist yet.
 
-## Research question
+## What is in the study
 
-Do general-purpose LLMs recover the same issue classes that human reviewers raise on merged OneBusAway Go/backend pull requests, and at what false-positive and harmful-finding cost relative to static analysis?
+- **Humans:** review comments on merged Maglev pull requests.
+- **Static analysis:** pinned `golangci-lint` 2.13.2 run on the merge commit.
+- **Language model:** same pull requests, scored later. That run is not finished.
 
 See [research_questions.md](research_questions.md) and the frozen [protocol.md](protocol.md).
 
@@ -14,26 +16,20 @@ See [research_questions.md](research_questions.md) and the frozen [protocol.md](
 
 | Artifact | Status |
 |---|---|
-| Protocol | Frozen for the pilot (2026-09-13). Not amended. |
-| Literature notes | Started |
-| 30-PR candidate list | Frozen discovery list preserved |
-| Phase 4 verification | Complete (2026-09-14). See `docs/data_collection.md` |
-| Raw corpus export | Complete: all 33 recommended PRs in `data/raw/prs/` |
-| Human labels | Frozen 2026-09-14. Primary reference set = 75 defect/design findings. See `docs/human_annotation.md`. |
-| Static-analysis baseline | Phase 6A complete. Pinned `golangci-lint` 2.13.2 on merge-SHA trees. See `docs/static_analysis.md`. |
-| LLM A pipeline | Phase 6B engineering pilot ready (`#1404`, `#702`, `#1428`). Live calls need `OPENAI_API_KEY`. See `docs/llm_pilot.md`. |
-| LLM context preflight | Local size and leak check complete. No API calls. See `docs/llm_preflight.md`. |
+| Protocol | Frozen for the pilot (2026-09-13) |
+| Corpus | 33 merged pull requests exported under `data/raw/prs/` |
+| Human labels | Frozen 2026-09-14. Gold set = 75 defect/design findings. See `docs/human_annotation.md` |
+| Static-analysis baseline | Done. See `docs/static_analysis.md` |
+| Language-model scoring | Pipeline ready for a 3-pull-request engineering check. Live scoring needs `OPENAI_API_KEY` and is not finished |
 | Report | Not written |
 
-Do not cite precision/recall numbers from this repository. None exist yet.
+Headline counts: **33** merged pull requests, **198** human comments, **266** atomic findings, **75** gold defect/design findings.
 
-**Phase 4 headline:** 30 original candidates checked; **26** eligible for primary gold; **4** excluded; recommended corpus **n = 33** if the 7 additional concurrency PRs with independent human review are included. The study should say `n = 33` (or `n = 26` if extras are held out), not pretend `n = 30`.
+## Why Maglev
 
-## Why this corpus
+Maglev is a Go rewrite of the OneBusAway REST API (GTFS import, SQLite, HTTP handlers). The author of this study is a Maglev contributor. That helps with data access and annotation. It is not a novelty claim.
 
-Maglev is a Go rewrite of the OneBusAway REST API (GTFS import, SQLite queries, HTTP handlers, real-time vs schedule behavior). The author of this study is a Maglev contributor. That is a **data-access and annotation** advantage, not a novelty claim.
-
-**Ground-truth rule:** the author's own review comments are never independent gold. Author-authored PRs enter the primary set only if another human left review or issue comments that can be labeled. Phase 4 confirmed independent humans on `#507` and `#702` via `/pulls/{n}/reviews`. `#457` also has independent review bodies; it was **not** silently inserted into the frozen 30 and is listed as an additional accept.
+The author's own review comments are never used as independent gold. Author-authored pull requests enter the gold set only if another human left review comments that can be labeled.
 
 ## Repository layout
 
@@ -48,7 +44,7 @@ src/oba_revieweval/         Library code
 tests/
 results/                    Generated tables (empty until experiments run)
 report/                     Technical report (later)
-docs/                       Annotation schema and Mitacs evidence notes
+docs/
 ```
 
 ## Setup
@@ -63,27 +59,24 @@ pip install -e ".[dev]"
 pytest
 ```
 
-Copy `.env.example` to `.env` only when you are ready to call a model API. **Do not commit `.env`.**
+Copy `.env.example` to `.env` only when you are ready to call a model API. Do not commit `.env`.
 
 ## Reproduce the raw corpus
 
 1. Read `docs/data_collection.md`.
 2. Clone Maglev to `data/raw/cache/maglev` (gitignored) if it is not already there.
-3. `python scripts/export_corpus.py` (uses `GITHUB_TOKEN` when set; otherwise the local cache plus public PR diffs).
-4. `python scripts/validate_corpus.py` — this fails if any of the 33 recommended exports is incomplete.
-5. Inspect `data/raw/prs/<number>/`, `data/raw/manifest.csv`, and unlabeled partitions in `data/extracted/prs/<number>/`.
-6. Replay the static-analysis baseline with `python scripts/install_golangci_lint.py` then `python scripts/run_linter.py`. See `docs/static_analysis.md`.
-7. Do **not** run `scripts/run_models.py` until the LLM phase.
+3. `python scripts/export_corpus.py` (uses `GITHUB_TOKEN` when set).
+4. `python scripts/validate_corpus.py`.
+5. Replay the static-analysis baseline with `python scripts/install_golangci_lint.py` then `python scripts/run_linter.py`.
+6. Do not run `scripts/run_models.py` until the language-model phase.
 
-`pytest` checks schemas, eligibility, bot/author rules, merge-SHA diffs, complete-corpus validation, and the golangci-lint baseline parser/manifest.
+## Ethics
 
-## Ethics and privacy
-
-Use only public GitHub pull-request data. Store logins needed for exclusion rules (author vs reviewer), not emails or other profile fields. Do not treat bot comments (for example CodeRabbit) as human review. Do not feed human review comments into the model prompt.
+Use only public GitHub pull-request data. Store logins needed for exclusion rules (author vs reviewer), not emails. Do not treat bot comments as human review. Do not put human review comments into the model prompt.
 
 ## License
 
-MIT. OneBusAway/maglev source remains under its own license; this repo stores study artifacts, not a Maglev fork.
+MIT. OneBusAway/maglev source remains under its own license; this repository stores study artifacts, not a Maglev fork.
 
 ## Citation
 
