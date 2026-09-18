@@ -17,6 +17,7 @@ htmlcov/
 Thumbs.db
 .idea/
 .vscode/
+.cursor/
 results/raw/
 results/api_cache/
 data/raw/cache/
