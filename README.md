@@ -12,6 +12,18 @@ This is a pilot case study, not a published paper and not a new benchmark. Do no
 
 See [research_questions.md](research_questions.md) and the frozen [protocol.md](protocol.md).
 
+## How the study is built
+
+**RQ1:** Do prompted LLMs recover the same defect/design issue classes that human reviewers raised on merged Maglev PRs, and at what incorrect / harmful cost relative to `golangci-lint`?
+
+Corpus: public merged Maglev PRs with a human (non-bot) review comment that is not by this repo’s author. Diffs, review threads, and issue comments sit under `data/raw/prs/` (33 PRs).
+
+Human labels (`data/human_review.csv`): each review comment is split into atomic findings and tagged (defect, design, process, question, …). **Gold** = findings with `in_reference_set=true` (75 defect/design). Process chatter is not treated as something a linter or model must catch.
+
+Static analysis: pinned `golangci-lint` **2.13.2**, `govet` + `staticcheck` SA\*, **change-scoped** to the PR diff (`docs/static_analysis.md`). On this corpus that run produced **0** change-scoped findings. That is a measured baseline (the same binary flags a synthetic `fmt.Printf` bug in tests). It is not “266 lint issues” — 266 is the count of human atomic findings.
+
+LLM path: prompts in `prompts/`, runner in `src/oba_revieweval/models/`. A 3-PR engineering check exists. Full-corpus scoring is not finished; `results/` has no metrics. Do not quote precision or recall from this repo.
+
 ## Status
 
 | Artifact | Status |
